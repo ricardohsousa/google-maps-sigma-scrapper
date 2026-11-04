@@ -65,3 +65,11 @@ test('HTTP gera ponte de compatibilidade sem carregar Electron no navegador', as
   assert.match(response.text, /window.sigmaTransport/);
   assert.doesNotMatch(response.text, /require\("electron"\)/);
 });
+
+test('HTTP permite identificação do site pelos tiles sem permitir scripts externos', async t => {
+  const f = fixture(t);
+  const response = await f.request('/web-preload.js');
+  assert.equal(response.headers['Referrer-Policy'], 'strict-origin-when-cross-origin');
+  assert.match(response.headers['Content-Security-Policy'], /script-src 'self' 'unsafe-inline';/);
+  assert.match(response.headers['Cache-Control'], /no-store/);
+});

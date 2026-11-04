@@ -1045,6 +1045,28 @@ instalação existente para outro proprietário.
 **Concluído quando:** o proprietário entra pelo hostname público e consegue
 abrir as telas administrativas.
 
+### 14.3. Configurar a extração e o provedor de IA
+
+Na barra superior, clique em **Configurações**. Esse acesso é exclusivo
+do Proprietário e não depende de encontrar o rodapé da barra lateral.
+
+Em **Origem dos dados do Maps**, escolha:
+
+- **Scraper do Maps:** extração pelo navegador do servidor; não exige um
+  provedor de IA para coletar os dados.
+- **API oficial (Places):** cadastre a chave da Places API, use **Validar e
+  salvar** e depois selecione essa origem nas extrações.
+
+Na mesma tela, a seção **Provedor de IA e análise** contém o botão
+**Configurar provedor de IA**. Ele abre a configuração de análise do Lead
+Scoring, onde você escolhe provedor/modelo, informa a chave, testa a conexão
+e salva. A IA é usada na análise comercial dos leads.
+
+Para iniciar uma coleta, abra **Painel → Nova Extração** e escolha a origem,
+a consulta e o limite de resultados. Se a configuração falhar, confira o
+erro exibido: a interface não deve informar que salvou uma chave quando a
+API recusou a operação.
+
 ## 15. Exportar e importar a base local
 
 O deploy começa com uma base web própria. Ele não lê automaticamente o
@@ -1338,6 +1360,9 @@ Monitore o espaço em disco para não acumular imagens indefinidamente.
 | Tunnel Offline depois do deploy | Confira container, token, DNS e saída 7844 |
 | Timeout de QUIC | Confira UDP 7844; verifique se o conector consegue fallback HTTP/2 |
 | `/healthz` funciona, mas site retorna 502 | Confira rota `http://web:3000`, saúde e logs do conector |
+| Proprietário não encontra Configurações | Publique a versão com acesso Configurações na barra superior e correção das alturas do painel web. O rodapé antigo podia ficar cortado. |
+| Tile do OpenStreetMap retorna 200 com `x-blocked: No referer sent` | É uma imagem de bloqueio. A versão corrigida usa o endpoint canônico e `Referrer-Policy: strict-origin-when-cross-origin`. Confira o `Referer` nos headers de requisição após o deploy. |
+| Console bloqueia `static.cloudflareinsights.com/beacon.min.js` por CSP | Trata-se do script de métricas Cloudflare. Essa mensagem não demonstra bloqueio da API ou dos tiles. O app não precisa liberar esse script para funcionar. |
 | Login Access funciona, mas Sigma recusa | E-mail ativo no Sigma, issuer/AUD corretos e vínculo de identidade |
 | Base web vazia | O deploy não importa a base automaticamente; execute a etapa 15 |
 | Backup rejeitado | Confira formato/checksum, tamanho e se exportou pelo mecanismo novo do Sigma |
@@ -1401,7 +1426,28 @@ Uma resposta HTTP confirma a saída HTTPS do container. Se o host conecta
 e esse teste falha, confira DNS/rede bridge e regras de encaminhamento do
 Docker, além dos logs do conector.
 
-### 18.3. Se o proprietário inicial foi cadastrado com e-mail incorreto
+### 18.3. Conferir o mapa depois da correção de Referer
+
+Depois de publicar o código novo e concluir um novo deploy, recarregue o
+site e abra **Painel → Scraper Maps**. No painel de rede do navegador,
+confira uma requisição para:
+
+```text
+https://tile.openstreetmap.org/Z/X/Y.png
+```
+
+Nos headers da requisição, deve aparecer o `Referer` com a origem real do
+site, por exemplo `https://sigma.ricardohenrique.com/`. A política envia
+apenas a origem nas conexões HTTPS externas, sem caminho ou parâmetros.
+A resposta deve conter a imagem normal do mapa, sem o aviso de bloqueio
+por Referer ausente. O status 200 sozinho não comprova isso: o servidor
+também pode devolver uma imagem de bloqueio com esse status.
+
+O app continua respeitando o cache normal dos tiles e não adiciona proxy,
+prefetch ou downloads em lote. Referência:
+[política de tiles do OpenStreetMap](https://operations.osmfoundation.org/policies/tiles/).
+
+### 18.4. Se o proprietário inicial foi cadastrado com e-mail incorreto
 
 Se houver um proprietário que consegue entrar, use a tela **Usuários** para
 cadastrar o e-mail correto. Preserve pelo menos um proprietário ativo.

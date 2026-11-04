@@ -185,8 +185,9 @@ function CommandPalette({ open, onClose, onNavigate, onNewExtraction }) {
   );
 }
 
-function AppInner() {
+function AppInner({ initialTab }) {
   const [activeTab, setActiveTabRaw] = useState(() => {
+    if (initialTab && ['overview', 'scraper', 'base', 'scoring', 'kanban', 'whatsapp', 'settings'].includes(initialTab) && isTabAvailable(initialTab)) return initialTab;
     try { const h = location.hash.slice(1); if(['overview','scraper','base','scoring','kanban','whatsapp','settings'].includes(h) && isTabAvailable(h)) return h; } catch{}
     return 'overview';
   });
@@ -206,6 +207,7 @@ function AppInner() {
   const [waStatus, setWaStatus] = useState('disconnected');
   const [leadsCount, setLeadsCount] = useState(() => dedupeLeads(organizeStoredLeads()).length);
   const [scoringCount, setScoringCount] = useState(0);
+  const [scoringSettingsRequest, setScoringSettingsRequest] = useState(0);
   const [activeExtraction, setActiveExtraction] = useState(null);
 
   const { addNotification } = useNotifications();
@@ -674,7 +676,7 @@ function AppInner() {
       case 'scoring':
         return (
           <ErrorBoundaryLite label="Lead Scoring">
-            <LeadScoring onUpdateScoringCount={setScoringCount} addLog={(msg) => console.log(msg)} />
+            <LeadScoring settingsRequest={scoringSettingsRequest} onUpdateScoringCount={setScoringCount} addLog={(msg) => console.log(msg)} />
           </ErrorBoundaryLite>
         );
       case 'kanban':
@@ -748,6 +750,14 @@ function AppInner() {
               </div>
               <p>Use Ctrl/Cmd +, − ou 0 para ajustar o zoom. A preferência é restaurada nesta instalação.</p>
               <MapsSourceSettingsCard />
+              <section className="settings-update-card" aria-labelledby="aiProviderSettingsTitle">
+                <h2 id="aiProviderSettingsTitle">Provedor de IA e análise</h2>
+                <p>Configure provedor, modelo e chave de API usados no Lead Scoring.</p>
+                <button type="button" className="btn btn-secondary" onClick={() => {
+                  setScoringSettingsRequest((value) => value + 1);
+                  setActiveTab('scoring');
+                }}>Configurar provedor de IA</button>
+              </section>
               <DataBackupCard />
               <UpdateSettingsCard />
               <section className="settings-danger-zone" aria-labelledby="clearLeadBaseTitle">
@@ -968,10 +978,10 @@ function AppInner() {
   );
 }
 
-export default function App() {
+export default function App({ initialTab } = {}) {
   return (
     <NotificationProvider>
-      <AppInner />
+      <AppInner initialTab={initialTab} />
     </NotificationProvider>
   );
 }

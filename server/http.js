@@ -32,7 +32,9 @@ function createApp({ service, verify, origin, dist = path.join(__dirname, '../re
   async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'same-origin');
+    // Os tiles OSM exigem Referer. Em HTTPS externo, enviar apenas a origem,
+    // sem caminho, parâmetros do Access ou dados da tela.
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Content-Security-Policy', "default-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
     try {
       const url = new URL(req.url, origin);
@@ -40,7 +42,7 @@ function createApp({ service, verify, origin, dist = path.join(__dirname, '../re
       const identity = await verify(req.headers['cf-access-jwt-assertion']);
       const user = service.users.resolve(identity);
       if (req.method === 'POST') {
-        if (req.headers.origin !== origin || req.headers['x-sigma-request'] !== '1') throw httpError(403, 'Origem da requisição não autorizada.', 'BAD_ORIGIN');
+        if (req.headers.origin !== origin || req.headers['x-sigma-request'] !== '1') throw httpError(403, `Origem da requisição não autorizada. Abra o Sigma por ${origin} e entre novamente.`, 'BAD_ORIGIN');
         if (url.pathname !== '/api/rpc') throw httpError(404, 'Rota não encontrada.');
         const input = await body(req);
         if (typeof input?.channel !== 'string') throw httpError(400, 'Informe a ação.');

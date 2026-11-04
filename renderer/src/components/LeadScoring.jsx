@@ -394,7 +394,7 @@ function analysisFromService(savedLead, preset = 'sites') {
   };
 }
 
-export default function LeadScoring({ onUpdateScoringCount, addLog }) {
+export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequest = 0 }) {
   const [leads, setLeads] = useState(() => normalizeLeadCollection(readLocalArray('sigma_leads')));
   const [localGroups, setLocalGroups] = useState(() => readLocalArray('sigma_groups'));
   const [serviceGroups, setServiceGroups] = useState([]);
@@ -420,6 +420,14 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
   const [showKey, setShowKey] = useState(false);
   const [testStatusMsg, setTestStatusMsg] = useState('');
   const [testStatusOk, setTestStatusOk] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  useEffect(() => {
+    if (settingsRequest > 0 && settingsLoaded) {
+      setTestStatusMsg('');
+      setShowKey(false);
+      setIsAiModalOpen(true);
+    }
+  }, [settingsRequest, settingsLoaded]);
   const [aiWarning, setAiWarning] = useState('');
 
   const [analysisMap, setAnalysisMap] = useState({});
@@ -467,7 +475,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       setRulesDraft(rulesDraftFrom(response.settings?.rules));
       setAutoAnalyze(response.settings?.analysis?.autoAnalyzeAfterScrape === true);
       setAnalyzeNoWebsite(response.settings?.analysis?.analyzeNoWebsite === true);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (!disposed) setSettingsLoaded(true); });
     return () => { disposed = true; };
   }, []);
 

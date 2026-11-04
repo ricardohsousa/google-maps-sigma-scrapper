@@ -40,9 +40,8 @@ const BASEMAPS = {
   padrao: {
     key: 'padrao',
     label: 'Padrão',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '© OpenStreetMap contributors',
-    subdomains: 'abc',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   },
   satelite: {
@@ -557,6 +556,7 @@ export default function MapScraperView({
 
       const cfg = BASEMAPS[baseKey] || BASEMAPS.padrao;
       const tile = L.tileLayer(cfg.url, {
+        referrerPolicy: 'strict-origin-when-cross-origin',
         maxZoom: cfg.maxZoom,
         attribution: cfg.attribution,
         subdomains: cfg.subdomains || 'abc',
@@ -653,6 +653,7 @@ export default function MapScraperView({
       map.removeLayer(tileLayerRef.current);
     }
     const nextTile = L.tileLayer(cfg.url, {
+      referrerPolicy: 'strict-origin-when-cross-origin',
       maxZoom: cfg.maxZoom,
       attribution: cfg.attribution,
       subdomains: cfg.subdomains || 'abc',

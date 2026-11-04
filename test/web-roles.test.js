@@ -33,7 +33,7 @@ test('operador consulta, anota e move leads, sem alterar dados cadastrais ou val
 });
 test('operador não consegue usar APIs administrativas diretamente', async t => {
   const { service, operator } = fixture(t);
-  for (const action of ['users-list', 'users-update', 'state-set', 'start-scrape', 'export-leads', 'backup-import', 'backup-export', 'kanban-reset', 'kanban-save-config', 'kanban-record-deal', 'lead-scoring-analyze-batch', 'lead-scoring-update-settings', 'lead-scoring-update-outcome', 'whatsapp-connect', 'unknown-channel']) {
+  for (const action of ['users-list', 'users-update', 'state-set', 'start-scrape', 'export-leads', 'backup-import', 'backup-export', 'kanban-reset', 'kanban-save-config', 'kanban-record-deal', 'maps-settings-get', 'maps-settings-set', 'lead-scoring-get-settings', 'lead-scoring-analyze-batch', 'lead-scoring-update-settings', 'lead-scoring-update-outcome', 'whatsapp-connect', 'unknown-channel']) {
     await assert.rejects(service.dispatch(operator, action, {}), error => error.status === 403, action);
   }
 });

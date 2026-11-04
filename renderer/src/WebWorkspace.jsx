@@ -136,20 +136,25 @@ function MigrationPanel() {
 export default function WebWorkspace({ session }) {
   const owner = session.user.role === 'owner';
   const [tab, setTab] = useState(owner ? 'app' : 'leads');
+  const [appVisit, setAppVisit] = useState(0);
   const [error, setError] = useState('');
   useEffect(() => {
     const failed = event => setError(event.detail);
     window.addEventListener('sigma:web-conflict', failed); window.addEventListener('sigma:web-session-error', failed);
     return () => { window.removeEventListener('sigma:web-conflict', failed); window.removeEventListener('sigma:web-session-error', failed); };
   }, []);
-  const change = async value => { await window.sigmaWeb.flush(); setTab(value); };
+  const change = async value => {
+    await window.sigmaWeb.flush();
+    if (['app', 'settings'].includes(value)) setAppVisit(visit => visit + 1);
+    setTab(value);
+  };
   const draft = () => {
     const content = JSON.stringify({ format: 'sigma-unsaved-draft', localStorage: window.sigmaWeb.draft() }, null, 2);
     const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = `sigma-rascunho-${Date.now()}.json`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
-  return <div className="web-workspace"><header className="web-session-bar"><strong>Σ Sigma</strong><nav aria-label="Navegação do Sigma">{owner && <button aria-current={tab === 'app' ? 'page' : undefined} onClick={() => change('app')}>Painel</button>}<button aria-current={tab === 'leads' ? 'page' : undefined} onClick={() => change('leads')}>Trabalhar leads</button>{owner && <><button aria-current={tab === 'users' ? 'page' : undefined} onClick={() => change('users')}>Usuários</button><button aria-current={tab === 'migration' ? 'page' : undefined} onClick={() => change('migration')}>Backup e migração</button></>}</nav><span>{session.user.email} · {owner ? 'Proprietário' : 'Operador'}</span><a href="/cdn-cgi/access/logout">Sair</a></header>
+  return <div className="web-workspace"><header className="web-session-bar"><strong>Σ Sigma</strong><nav aria-label="Navegação do Sigma">{owner && <button aria-current={tab === 'app' ? 'page' : undefined} onClick={() => change('app')}>Painel</button>}<button aria-current={tab === 'leads' ? 'page' : undefined} onClick={() => change('leads')}>Trabalhar leads</button>{owner && <><button aria-current={tab === 'settings' ? 'page' : undefined} onClick={() => change('settings')}>Configurações</button><button aria-current={tab === 'users' ? 'page' : undefined} onClick={() => change('users')}>Usuários</button><button aria-current={tab === 'migration' ? 'page' : undefined} onClick={() => change('migration')}>Backup e migração</button></>}</nav><span>{session.user.email} · {owner ? 'Proprietário' : 'Operador'}</span><a href="/cdn-cgi/access/logout">Sair</a></header>
     {error && <div className="web-blocker"><section className="web-panel" role="alert"><h1>Atualize sua sessão</h1><p>{error}</p>{owner && <button className="btn" onClick={draft}>Baixar rascunho desta aba</button>}<button className="btn btn-primary" onClick={() => location.reload()}>Recarregar dados do servidor</button></section></div>}
-    {owner && tab === 'app' ? <div className="web-owner-app"><App /></div> : tab === 'users' && owner ? <UsersPanel /> : tab === 'migration' && owner ? <MigrationPanel /> : <LeadsWorkspace />}
+    {owner && ['app', 'settings'].includes(tab) ? <div className="web-owner-app"><App key={`${tab}:${appVisit}`} initialTab={tab === 'settings' ? 'settings' : undefined} /></div> : tab === 'users' && owner ? <UsersPanel /> : tab === 'migration' && owner ? <MigrationPanel /> : <LeadsWorkspace />}
   </div>;
 }

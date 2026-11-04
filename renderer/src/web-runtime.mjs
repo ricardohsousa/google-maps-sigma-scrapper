@@ -1,3 +1,5 @@
+import { readWebResponse } from './web-response.mjs';
+
 const SHARED = new Set(['sigma_leads', 'sigma_searches', 'sigma_groups', 'sigma_history', 'sigma_analysis', 'sigma_leads_initialized', 'sigma_whatsapp_reminders']);
 
 export function saveDownload(download) {
@@ -14,10 +16,7 @@ export async function initializeWeb() {
   if (window.electronAPI) return null;
   async function request(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', ...options });
-    if (response.redirected || !response.headers.get('content-type')?.includes('application/json')) throw new Error('Sua sessão terminou. Recarregue para entrar pelo Cloudflare Access.');
-    const result = await response.json();
-    if (!response.ok || result.success === false) throw Object.assign(new Error(result.error || 'Não foi possível concluir a ação.'), { code: result.code, status: response.status });
-    return result;
+    return readWebResponse(response);
   }
   const session = await request('/api/session');
   let state = session.state || { revision: 0, values: {} };
