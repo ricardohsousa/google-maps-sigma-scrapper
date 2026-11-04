@@ -685,12 +685,15 @@ export default function MapScraperView({
         zIndexOffset: 600,
       }).addTo(map);
 
-      marker.bindPopup(`
-        <div style="font-family: var(--font-body); font-size: 12px; padding: 4px;">
-          <b>${userLocation.label || 'Sua referência'}</b>
-          <div style="color: var(--muted); font-size: 11px; margin-top: 2px;">Ponto de referência ativo</div>
-        </div>
-      `);
+      const popup = document.createElement('div');
+      popup.className = 'lp-pop';
+      const title = document.createElement('b');
+      title.textContent = userLocation.label || 'Sua referência';
+      const caption = document.createElement('div');
+      caption.className = 'm';
+      caption.textContent = 'Ponto de referência ativo';
+      popup.append(title, caption);
+      marker.bindPopup(popup);
 
       userMarkerRef.current = marker;
     }
@@ -732,14 +735,23 @@ export default function MapScraperView({
         title: name,
       });
 
-      marker.bindPopup(`
-        <div class="lp-pop">
-          <b>${name}</b>
-          <div class="m">${hood ? `${hood} · ` : ''}★ ${rating} (${reviews})</div>
-          <div class="m" ${phone ? 'data-sensitive-phone="true"' : ''}>${phone || cat}</div>
-          <button type="button" data-lead-key="${leadId}">Ver no feed</button>
-        </div>
-      `);
+      const popup = document.createElement('div');
+      popup.className = 'lp-pop';
+      const title = document.createElement('b');
+      title.textContent = name;
+      const location = document.createElement('div');
+      location.className = 'm';
+      location.textContent = `${hood ? `${hood} · ` : ''}★ ${rating} (${reviews})`;
+      const contact = document.createElement('div');
+      contact.className = 'm';
+      contact.textContent = phone || cat;
+      if (phone) contact.dataset.sensitivePhone = 'true';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.leadKey = leadId;
+      button.textContent = 'Ver no feed';
+      popup.append(title, location, contact, button);
+      marker.bindPopup(popup);
 
       marker.on('click', () => {
         handleSpotlightLead(lead, leadId, loc.lat, loc.lng, false);

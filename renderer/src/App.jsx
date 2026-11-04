@@ -25,8 +25,14 @@ import OnboardingTour from './components/OnboardingTour';
 import { NotificationProvider, useNotifications } from './components/NotificationCenter';
 import UpdateBanner from './components/UpdateBanner';
 import UpdateSettingsCard from './components/UpdateSettingsCard';
+import MapsSourceSettingsCard from './components/MapsSourceSettingsCard';
+import DataBackupCard from './components/DataBackupCard';
 import { dedupeLeads, normalizeLeadCollection, readLocalArray } from './leadData';
 import { splitBatchInput, buildExtractionTargets, MAX_MATRIX_TARGETS } from './batchSplit.mjs';
+
+const WHATSAPP_ENABLED = __WHATSAPP_ENABLED__;
+const WHATSAPP_TABS = ['whatsapp', 'campaigns'];
+const isTabAvailable = (tab) => WHATSAPP_ENABLED || !WHATSAPP_TABS.includes(tab);
 
 const EXTRACTION_JOBS_KEY = 'sigma_extraction_jobs';
 
@@ -153,7 +159,7 @@ function CommandPalette({ open, onClose, onNavigate, onNewExtraction }) {
     { id: 'kanban', label: 'Ir para Kanban', desc: 'Funil comercial de todos os leads', icon: '▤', action: () => { onNavigate('kanban'); onClose(false); } },
     { id: 'whatsapp', label: 'Ir para WhatsApp', desc: 'Chats e campanhas', icon: '◐', action: () => { onNavigate('whatsapp'); onClose(false); } },
     { id: 'new', label: 'Nova Extração…', desc: 'Criar busca no Google Maps', icon: '＋', action: () => { onClose(false); onNewExtraction(); } },
-  ];
+  ].filter((item) => isTabAvailable(item.id));
   const filtered = q.trim() ? items.filter(i => (`${i.label} ${i.desc}`.toLowerCase().includes(q.toLowerCase()))) : items;
   return (
     <div className="overlay on" id="cmdkOv" data-od-id="cmdk" onClick={() => onClose(false)}>
@@ -180,10 +186,11 @@ function CommandPalette({ open, onClose, onNavigate, onNewExtraction }) {
 }
 
 function AppInner() {
-  const [activeTab, setActiveTab] = useState(() => {
-    try { const h = location.hash.slice(1); if(['overview','scraper','base','scoring','kanban','whatsapp','settings'].includes(h)) return h; } catch{}
+  const [activeTab, setActiveTabRaw] = useState(() => {
+    try { const h = location.hash.slice(1); if(['overview','scraper','base','scoring','kanban','whatsapp','settings'].includes(h) && isTabAvailable(h)) return h; } catch{}
     return 'overview';
   });
+  const setActiveTab = useCallback((tab) => setActiveTabRaw(isTabAvailable(tab) ? tab : 'overview'), []);
   const [isNewExtractionOpen, setIsNewExtractionOpen] = useState(false);
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -487,7 +494,7 @@ function AppInner() {
             neighborhoodIndex: flatIndex,
             totalNeighborhoods: job.targets.length,
             batchComplete: flatIndex === job.targets.length - 1,
-          });
+          }, job.source);
         } catch (err) {
           res = { success: false, error: err?.message || 'Falha na busca.' };
         }
@@ -558,7 +565,7 @@ function AppInner() {
     }
   };
 
-  const handleStartExtraction = async ({ niche, niches, neigh, neighborhoods, city, limit }) => {
+  const handleStartExtraction = async ({ niche, niches, neigh, neighborhoods, city, limit, source }) => {
     if (activeExtraction || extractionRunningRef.current) {
       addNotification({
         type: 'info',
@@ -605,6 +612,7 @@ function AppInner() {
       qstr,
       label: `${nicheList.length > 1 ? `${nicheList.length} nichos` : nicheList[0]} · ${neighList.length ? `${neighList.length} bairro(s)` : 'município inteiro'}${city ? ` · ${city}` : ''}`,
       limit: Number.isFinite(Number(limit)) ? Number(limit) : 1000,
+      source: source === 'places-api' ? 'places-api' : 'scraper',
       targets,
       status: 'running',
       completedKeys: [],
@@ -739,6 +747,8 @@ function AppInner() {
                 </button>
               </div>
               <p>Use Ctrl/Cmd +, − ou 0 para ajustar o zoom. A preferência é restaurada nesta instalação.</p>
+              <MapsSourceSettingsCard />
+              <DataBackupCard />
               <UpdateSettingsCard />
               <section className="settings-danger-zone" aria-labelledby="clearLeadBaseTitle">
                 <div>
@@ -874,13 +884,15 @@ function AppInner() {
             <span className="nav-label-text">Kanban</span><span className="nav-kbd">5</span>
           </button>
 
-          <button
-            className={`nav-item ${activeTab === 'whatsapp' ? 'active' : ''}`}
-            onClick={() => navigate('whatsapp')}
-          >
-            <span className="ico" aria-hidden="true"><MessageCircle size={17} /></span>
-            <span className="nav-label-text">WhatsApp</span><span className="nav-kbd">6</span>
-          </button>
+          {WHATSAPP_ENABLED && (
+            <button
+              className={`nav-item ${activeTab === 'whatsapp' ? 'active' : ''}`}
+              onClick={() => navigate('whatsapp')}
+            >
+              <span className="ico" aria-hidden="true"><MessageCircle size={17} /></span>
+              <span className="nav-label-text">WhatsApp</span><span className="nav-kbd">6</span>
+            </button>
+          )}
 
         </nav>
 
@@ -910,10 +922,12 @@ function AppInner() {
 
           {/* Right Header Actions */}
           <div className="header-right-actions">
-            <button type="button" className="wa-status-pill" onClick={() => navigate('whatsapp')}>
-              <span className={`wa-status-dot ${waStatus === 'connected' ? 'online' : ''}`} />
-              <span>{waStatus === 'connected' ? '1 WhatsApp online' : 'WhatsApp desconectado'}</span>
-            </button>
+            {WHATSAPP_ENABLED && (
+              <button type="button" className="wa-status-pill" onClick={() => navigate('whatsapp')}>
+                <span className={`wa-status-dot ${waStatus === 'connected' ? 'online' : ''}`} />
+                <span>{waStatus === 'connected' ? '1 WhatsApp online' : 'WhatsApp desconectado'}</span>
+              </button>
+            )}
 
             {/* Window Controls (Frameless Drag/Close) */}
             <div className="window-control-buttons">

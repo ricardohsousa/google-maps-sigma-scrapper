@@ -18,8 +18,15 @@ import {
   Plus,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Copy,
+  Check,
+  MessageCircle,
+  Mail,
+  Phone,
+  Instagram
 } from 'lucide-react';
+import { instagramProfileUrl, normalizeInstagram } from '../leadLinks.mjs';
 import { dedupeLeads, normalizeLeadCollection, readLocalArray } from '../leadData';
 import {
   DEFAULT_SCORE_THRESHOLDS,
@@ -180,11 +187,164 @@ function sanitizeRulesDraft(draft) {
   return { ...draft, goodFrom: low, highFrom: high, ignoreBelow: Math.min(thresholds.ignoreBelow ?? 40, low) };
 }
 
+// Mesmo critério do motor: perfil de rede social ou página de links não é site próprio.
+const PROFILE_HOST = /(^|\.)(instagram\.com|facebook\.com|fb\.com|tiktok\.com|linkedin\.com|x\.com|twitter\.com|youtube\.com|youtu\.be|wa\.me|whatsapp\.com|t\.me|linktr\.ee|beacons\.ai|bio\.site|taplink\.cc|ifood\.com\.br|doctoralia\.com\.br)$/i;
+
+function hasOwnSiteLink(website) {
+  const raw = String(website || '').trim();
+  if (!raw) return false;
+  try {
+    const host = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, '');
+    return !PROFILE_HOST.test(host);
+  } catch {
+    return false;
+  }
+}
+
+const SITE_FILTERS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'with', label: 'Com site' },
+  { key: 'without', label: 'Sem site' },
+];
+
+const STATUS_FILTERS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'pending', label: 'Não analisados' },
+  { key: 'done', label: 'Analisados' },
+];
+
+const SORT_OPTIONS = [
+  { key: 'base', label: 'Ordem da base' },
+  { key: 'score-desc', label: 'Maior score' },
+  { key: 'score-asc', label: 'Menor score' },
+];
+
 function fmtShort(ts) {
   if (!ts) return '—';
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function approachFrom(ai = {}) {
+  const text = (value) => (typeof value === 'string' ? value.trim() : '');
+  const subject = text(ai.assunto_email);
+  const body = text(ai.primeiro_email);
+  return {
+    whatsapp: text(ai.mensagem_whatsapp),
+    email: body ? (subject ? `Assunto: ${subject}\n\n${body}` : body) : '',
+    followUp: text(ai.mensagem_follow_up),
+    objections: (Array.isArray(ai.objecoes_provaveis) ? ai.objecoes_provaveis : [])
+      .map((item) => ({ q: text(item?.objecao), a: text(item?.resposta) }))
+      .filter((item) => item.q && item.a),
+  };
+}
+
+function useCopy() {
+  const [state, setState] = useState('idle');
+  useEffect(() => {
+    if (state === 'idle') return undefined;
+    const timer = setTimeout(() => setState('idle'), 1800);
+    return () => clearTimeout(timer);
+  }, [state]);
+  const copy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setState('ok');
+    } catch {
+      setState('fail');
+    }
+  };
+  return [state, copy];
+}
+
+// Telefone brasileiro sem DDI ganha o 55 para o link do WhatsApp abrir certo.
+function whatsappUrl(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits.length >= 12 ? `https://wa.me/${digits}` : '';
+}
+
+/** Canais de contato do lead, na ordem em que vale tentar. */
+function contactChannels(lead = {}) {
+  const channels = [];
+  const whats = lead.whatsapp || lead.phone || lead.tel || '';
+  const whatsLink = whatsappUrl(whats);
+  if (whatsLink) channels.push({ key: 'whatsapp', label: 'WhatsApp', value: whats, url: whatsLink, Icon: MessageCircle });
+  const phone = lead.phone || lead.tel || '';
+  if (phone && (!whatsLink || (lead.whatsapp && lead.whatsapp !== phone))) {
+    channels.push({ key: 'phone', label: 'Telefone', value: phone, url: '', Icon: Phone });
+  }
+  const email = lead.email || lead.mail || '';
+  if (email) channels.push({ key: 'email', label: 'E-mail', value: email, url: '', Icon: Mail });
+  const insta = normalizeInstagram(lead.instagram || lead.ig || '');
+  if (insta) channels.push({ key: 'instagram', label: 'Instagram', value: insta, url: instagramProfileUrl(insta), Icon: Instagram });
+  if (lead.website) channels.push({ key: 'site', label: 'Site', value: lead.website, url: lead.website, Icon: Globe });
+  return channels;
+}
+
+function openChannel(channel) {
+  if (!channel.url) return;
+  if (channel.key === 'site') window.electronAPI?.openSite?.(channel.url);
+  else window.electronAPI?.openExternal?.(channel.url);
+}
+
+/** Ícone compacto da tabela: clique copia o contato. */
+function ChannelIcon({ channel }) {
+  const [state, copy] = useCopy();
+  const { Icon } = channel;
+  return (
+    <button
+      type="button"
+      className={`sc-channel-icon ${state === 'ok' ? 'is-copied' : ''}`}
+      title={state === 'ok' ? 'Copiado' : `Copiar ${channel.label.toLowerCase()}: ${channel.value}`}
+      aria-label={`Copiar ${channel.label.toLowerCase()} ${channel.value}`}
+      onClick={() => copy(channel.value)}
+    >
+      {state === 'ok' ? <Check size={14} /> : <Icon size={14} />}
+    </button>
+  );
+}
+
+function ChannelRow({ channel }) {
+  const { Icon } = channel;
+  return (
+    <div className="sc-channel-row">
+      <Icon size={15} aria-hidden="true" />
+      <span className="sc-channel-label">{channel.label}</span>
+      <span className="sc-channel-value" title={channel.value}>{channel.value}</span>
+      <CopyButton text={channel.value} />
+      {channel.url ? (
+        <button type="button" className="btn btn-sm" onClick={() => openChannel(channel)}>
+          <ExternalLink size={13} /> Abrir
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function CopyButton({ text, label = 'Copiar' }) {
+  const [state, copyText] = useCopy();
+  const copy = () => copyText(text);
+  return (
+    <button type="button" className="btn btn-sm sc-copy-btn" onClick={copy} disabled={!text}>
+      {state === 'ok' ? <><Check size={13} /> Copiado</> : state === 'fail' ? 'Não copiou' : <><Copy size={13} /> {label}</>}
+    </button>
+  );
+}
+
+function ApproachBlock({ title, text }) {
+  if (!text) return null;
+  return (
+    <div className="sc-approach">
+      <div className="sc-approach-head">
+        <b>{title}</b>
+        <CopyButton text={text} />
+      </div>
+      <p className="sc-approach-text">{text}</p>
+    </div>
+  );
 }
 
 function analysisFromService(savedLead, preset = 'sites') {
@@ -206,12 +366,14 @@ function analysisFromService(savedLead, preset = 'sites') {
     ...(Array.isArray(ai.principais_oportunidades) ? ai.principais_oportunidades : []),
     ...(Array.isArray(site.siteSummary?.conversion?.likelyLeaks) ? site.siteSummary.conversion.likelyLeaks : []),
   ].filter(Boolean);
-  const noSite = !site.finalUrl && !company.website;
+  const noSite = (!site.finalUrl && !company.website) || ['social', 'link_aggregator', 'marketplace'].includes(site.digitalPresence?.kind);
   const sections = [
     {
       t: 'Diagnóstico técnico',
       items: [
-        noSite ? 'Nenhum site próprio foi localizado na análise.' : `Site analisado: ${site.finalUrl || company.website}`,
+        noSite
+          ? (company.website ? `Sem site próprio: o link informado é um perfil (${site.digitalPresence?.platform || site.digitalPresence?.kind}).` : 'Nenhum site próprio foi localizado na análise.')
+          : `Site analisado: ${site.finalUrl || company.website}`,
         site.performance?.loadTimeMs ? `Carregamento medido: ${Math.round(site.performance.loadTimeMs)} ms` : '',
       ].filter(Boolean),
     },
@@ -224,6 +386,7 @@ function analysisFromService(savedLead, preset = 'sites') {
     opp: opportunities,
     sections,
     noSite,
+    approach: approachFrom(ai),
     provider: ai.rawProvider || (ai.providerModel ? 'IA' : 'regras locais'),
     model: ai.providerModel || '',
     preset,
@@ -251,6 +414,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
   const [thresholds, setThresholds] = useState(DEFAULT_SCORE_THRESHOLDS);
   const [rulesDraft, setRulesDraft] = useState(() => defaultRulesDraft());
   const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const [analyzeNoWebsite, setAnalyzeNoWebsite] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiDraft, setAiDraft] = useState(() => readAiConfig());
   const [showKey, setShowKey] = useState(false);
@@ -266,8 +430,12 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
   const [progressCount, setProgressCount] = useState({ current: 0, total: 0 });
   const [progressText, setProgressText] = useState('');
 
-  // Seleção na tabela
+  // Seleção, filtro e ordenação da tabela
   const [selectedRowIds, setSelectedRowIds] = useState(new Set());
+  const [siteFilter, setSiteFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('base');
+  const [runLeadIds, setRunLeadIds] = useState(null);
 
   // Modal de Detalhes do Lead
   const [detailLead, setDetailLead] = useState(null);
@@ -298,6 +466,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       setThresholds(normalizeThresholds(response.settings?.rules?.thresholds));
       setRulesDraft(rulesDraftFrom(response.settings?.rules));
       setAutoAnalyze(response.settings?.analysis?.autoAnalyzeAfterScrape === true);
+      setAnalyzeNoWebsite(response.settings?.analysis?.analyzeNoWebsite === true);
     }).catch(() => {});
     return () => { disposed = true; };
   }, []);
@@ -388,6 +557,43 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
   useEffect(() => { groupLeadsRef.current = groupLeads; }, [groupLeads]);
   const basePositions = useMemo(() => new Map(leads.map((lead, position) => [lead, position])), [leads]);
 
+  // Recorte da tabela: filtro de site + ordenação. Lead sem score vai para o fim.
+  const visibleLeads = useMemo(() => {
+    const filtered = groupLeads.filter((lead) => {
+      if (statusFilter === 'pending' && analysisMap[lead.id]) return false;
+      if (statusFilter === 'done' && !analysisMap[lead.id]) return false;
+      if (siteFilter === 'all') return true;
+      const ownSite = analysisMap[lead.id] ? !analysisMap[lead.id].noSite : hasOwnSiteLink(lead.website);
+      return siteFilter === 'with' ? ownSite : !ownSite;
+    });
+    if (sortBy === 'base') return filtered;
+    const direction = sortBy === 'score-asc' ? 1 : -1;
+    return filtered
+      .map((lead, position) => ({ lead, position, score: analysisMap[lead.id]?.score }))
+      .sort((a, b) => {
+        if (a.score == null && b.score == null) return a.position - b.position;
+        if (a.score == null) return 1;
+        if (b.score == null) return -1;
+        return (a.score - b.score) * direction || a.position - b.position;
+      })
+      .map((row) => row.lead);
+  }, [groupLeads, siteFilter, statusFilter, sortBy, analysisMap]);
+
+  // Selecionados que estão no recorte; sem seleção, analisa o recorte inteiro.
+  const runTargets = useMemo(() => {
+    const selected = visibleLeads.filter((lead) => selectedRowIds.has(lead.id));
+    return selected.length ? selected : visibleLeads;
+  }, [visibleLeads, selectedRowIds]);
+  const runLeads = useMemo(() => {
+    if (!runLeadIds) return groupLeads;
+    return groupLeads.filter((lead) => runLeadIds.has(lead.id));
+  }, [groupLeads, runLeadIds]);
+  const selectedVisibleCount = visibleLeads.filter((lead) => selectedRowIds.has(lead.id)).length;
+  const targetsWithoutSite = runTargets.filter((lead) => !lead.website).length;
+  const runLabel = selectedVisibleCount
+    ? `Analisar ${selectedVisibleCount} selecionado${selectedVisibleCount === 1 ? '' : 's'}`
+    : siteFilter === 'all' && statusFilter === 'all' ? 'Analisar grupo' : `Analisar ${visibleLeads.length} do filtro`;
+
   // Salvar grupo selecionado
   const handleSelectGroup = (id) => {
     setSelectedGroupId(id);
@@ -422,7 +628,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       const response = await window.leadScoringAPI.updateSettings({
         ai,
         rules,
-        analysis: { autoAnalyzeAfterScrape: autoAnalyze },
+        analysis: { autoAnalyzeAfterScrape: autoAnalyze, analyzeNoWebsite },
       });
       if (!response?.success) {
         setTestStatusMsg(response?.error || 'Não foi possível salvar a configuração.');
@@ -435,6 +641,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       setThresholds(normalizeThresholds(response.settings?.rules?.thresholds));
       setRulesDraft(rulesDraftFrom(response.settings?.rules));
       setAutoAnalyze(response.settings?.analysis?.autoAnalyzeAfterScrape === true);
+      setAnalyzeNoWebsite(response.settings?.analysis?.analyzeNoWebsite === true);
       setIsAiModalOpen(false);
       addLog?.('[SCORING] Configuração de análise atualizada.');
       return;
@@ -488,6 +695,11 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       setProgressText('Este grupo não tem leads na base atual. Confira os membros em Base de Leads.');
       return;
     }
+    const targets = runTargets;
+    if (!targets.length) {
+      setProgressText('Nenhum lead no filtro atual.');
+      return;
+    }
     if (!window.leadScoringAPI?.analyzeBatch) {
       setProgressText('Serviço de scoring indisponível. Nenhuma análise foi simulada.');
       return;
@@ -495,15 +707,16 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
 
     const jobId = `ui_batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     activeJobRef.current = jobId;
-    const total = groupLeads.length;
-    const initialStates = Object.fromEntries(groupLeads.map((lead) => [lead.id, 'wait']));
+    const total = targets.length;
+    setRunLeadIds(new Set(targets.map((lead) => lead.id)));
+    const initialStates = Object.fromEntries(targets.map((lead) => [lead.id, 'wait']));
     setRunStates(initialStates);
     setProgressCount({ current: 0, total });
     setProgressText(`Enviando ${total} lead${total === 1 ? '' : 's'} para análise…`);
     setIsRunning(true);
 
     try {
-      const response = await window.leadScoringAPI.analyzeBatch(groupLeads, { jobId });
+      const response = await window.leadScoringAPI.analyzeBatch(targets, { jobId });
       if (!response?.success) throw new Error(response?.error || 'A análise em lote falhou.');
 
       const savedLeads = (response.results || []).filter((row) => row?.success && row.lead).map((row) => row.lead);
@@ -520,7 +733,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       const savedIndex = buildScoringIndex(savedLeads);
       const nextStates = { ...initialStates };
       const nextAnalyses = {};
-      groupLeads.forEach((lead, position) => {
+      targets.forEach((lead, position) => {
         if (isSkipped(lead)) {
           nextStates[lead.id] = 'skipped';
           return;
@@ -540,7 +753,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       const completed = Object.values(nextStates).filter((state) => state === 'done' || state === 'nosite' || state === 'skipped').length;
       setProgressCount({ current: completed, total });
       setProgressText(skippedCount
-        ? `Concluída: ${completed - skippedCount} analisados, ${skippedCount} ignorados (sem site).`
+        ? `Concluída: ${completed - skippedCount} analisados, ${skippedCount} ignorados (sem site). Para avaliá-los, ative "Analisar também leads sem site" em Configurar.`
         : (response.failures ? `Concluída com ${response.failures} falha(s).` : 'Análise concluída.'));
       // A IA pode falhar e o lote continuar com as regras locais. Isso precisa
       // aparecer: antes o usuário via "concluído" sem saber que a IA caiu.
@@ -548,7 +761,10 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       addLog?.(`[SCORING] ${completed}/${total} análises persistidas no serviço.`);
       await loadCanonicalScoring();
     } catch (error) {
-      setRunStates((previous) => Object.fromEntries(groupLeads.map((lead) => [lead.id, previous[lead.id] === 'done' ? 'done' : 'fail'])));
+      setRunStates((previous) => ({
+        ...previous,
+        ...Object.fromEntries(targets.map((lead) => [lead.id, previous[lead.id] === 'done' ? 'done' : 'fail'])),
+      }));
       setProgressText(error?.message || 'Não foi possível concluir a análise.');
       addLog?.(`[SCORING] Falha: ${error?.message || 'erro desconhecido'}`);
     } finally {
@@ -565,7 +781,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
       const response = await window.leadScoringAPI.analyzeLead(lead, { jobId });
       if (response?.skipped) {
         setRunStates((previous) => ({ ...previous, [lead.id]: 'skipped' }));
-        setProgressText('Ignorado: lead sem site próprio.');
+        setProgressText('Ignorado: lead sem site. Ative "Analisar também leads sem site" em Configurar para avaliá-lo.');
         return;
       }
       if (!response?.success || !response.lead) throw new Error(response?.error || 'A reanálise falhou.');
@@ -632,11 +848,12 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
   };
 
   // Selecionar todos
+  const allVisibleSelected = visibleLeads.length > 0 && visibleLeads.every((lead) => selectedRowIds.has(lead.id));
   const toggleSelectAll = () => {
-    if (selectedRowIds.size === groupLeads.length) {
+    if (allVisibleSelected) {
       setSelectedRowIds(new Set());
     } else {
-      setSelectedRowIds(new Set(groupLeads.map((l) => l.id)));
+      setSelectedRowIds(new Set(visibleLeads.map((l) => l.id)));
     }
   };
 
@@ -767,8 +984,14 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                  id="scRunBtn"
                  onClick={handleRunScoring}
                >
-                 {isRunning ? 'Pausar análise' : 'Analisar grupo'}
+                 {isRunning ? 'Pausar análise' : runLabel}
                </button>
+               {!isRunning && !analyzeNoWebsite && targetsWithoutSite > 0 ? (
+                 <span className="sc-run-hint">
+                   {targetsWithoutSite} sem site {targetsWithoutSite === 1 ? 'será ignorado' : 'serão ignorados'} ·{' '}
+                   <button type="button" className="link-btn" onClick={handleOpenAiModal}>ativar</button>
+                 </span>
+               ) : null}
              </div>
            </div>
 
@@ -813,7 +1036,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                   overflowY: 'auto'
                 }}
               >
-                {groupLeads.map((l) => {
+                {runLeads.map((l) => {
                   const st = runStates[l.id] || (analysisMap[l.id] ? (analysisMap[l.id].noSite ? 'nosite' : 'done') : 'wait');
                   const pillConfig = {
                     wait: { label: 'Aguardando', cls: 'st-wait' },
@@ -848,6 +1071,44 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
 
           {/* Tabela de Resultados (#scResults) */}
           <div id="scResults" data-od-id="scoring-results">
+            <div className="sc-filterbar">
+              <div className="sc-chips" role="group" aria-label="Filtrar por site">
+                {SITE_FILTERS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-pressed={siteFilter === option.key}
+                    onClick={() => setSiteFilter(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="sc-chips" role="group" aria-label="Filtrar por análise">
+                {STATUS_FILTERS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-pressed={statusFilter === option.key}
+                    onClick={() => setStatusFilter(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <span className="result-count">
+                {visibleLeads.length === groupLeads.length ? `${groupLeads.length} leads` : `${visibleLeads.length} de ${groupLeads.length} leads`}
+              </span>
+              <span style={{ flex: 1 }} />
+              <label className="sc-sort">
+                <span>Ordenar</span>
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar leads">
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {/* Barra de Seleção */}
             {selectedRowIds.size > 0 && (
               <div className="selbar" id="scSelBar" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--surface-warm)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8 }}>
@@ -874,13 +1135,13 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                         className="rowcheck"
                         id="scChkAll"
                         aria-label="Selecionar todos"
-                        checked={selectedRowIds.size > 0 && selectedRowIds.size === groupLeads.length}
+                        checked={allVisibleSelected}
                         onChange={toggleSelectAll}
                       />
                     </th>
                     <th>Empresa</th>
                     <th>Score</th>
-                    <th>Site</th>
+                    <th>Contato</th>
                     <th>Situação</th>
                     <th>Oportunidades</th>
                     <th>Atualizado</th>
@@ -903,7 +1164,17 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                       </td>
                     </tr>
                   ) : null}
-                  {groupLeads.map((lead) => {
+                  {groupLeads.length > 0 && visibleLeads.length === 0 ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <div className="empty">
+                          <b style={{ color: 'var(--fg)' }}>Nenhum lead neste filtro</b>
+                          <button type="button" className="btn btn-sm" onClick={() => { setSiteFilter('all'); setStatusFilter('all'); }}>Mostrar todos</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                  {visibleLeads.map((lead) => {
                     const an = analysisMap[lead.id];
                     const isRowChecked = selectedRowIds.has(lead.id);
 
@@ -944,13 +1215,17 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                           )}
                         </td>
                         <td style={{ fontSize: 12.5 }}>
-                          {lead.website ? (
-                            <button type="button" className="site-icon-btn" title={lead.website} aria-label={`Abrir site ${lead.website}`} onClick={() => window.electronAPI?.openSite?.(lead.website)}>
-                              <Globe size={15} />
-                            </button>
-                          ) : (
-                            'Sem site'
-                          )}
+                          {(() => {
+                            const channels = contactChannels(lead);
+                            return channels.length ? (
+                              <span className="sc-channel-icons">
+                                {channels.map((channel) => <ChannelIcon key={channel.key} channel={channel} />)}
+                                {!lead.website ? <span className="sc-nosite-tag">sem site</span> : null}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--meta)' }}>Sem contato</span>
+                            );
+                          })()}
                         </td>
                         <td>
                           <span className={`st-pill ${sit[1]}`}>{sit[0]}</span>
@@ -1173,6 +1448,17 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                   <small>Cada busca no Maps já sai com score calculado, sem clique extra.</small>
                 </span>
               </label>
+              <label className="sc-toggle">
+                <input
+                  type="checkbox"
+                  checked={analyzeNoWebsite}
+                  onChange={(e) => setAnalyzeNoWebsite(e.target.checked)}
+                />
+                <span>
+                  <b>Analisar também leads sem site</b>
+                  <small>Score pelos dados do Maps (avaliações, nota, contato) e mensagem oferecendo um site. Usa a IA também nesses leads.</small>
+                </span>
+              </label>
             </div>
 
             <div className="modal-foot">
@@ -1212,6 +1498,17 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
             </div>
 
             <div className="modal-body" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
+              {(() => {
+                const channels = contactChannels(detailLead);
+                return (
+                  <div className="sc-channels">
+                    <div className="exp-sec">Contato</div>
+                    {channels.length
+                      ? channels.map((channel) => <ChannelRow key={channel.key} channel={channel} />)
+                      : <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Nenhum canal de contato neste lead.</span>}
+                  </div>
+                );
+              })()}
               {analysisMap[detailLead.id] ? (
                 (() => {
                   const detail = analysisMap[detailLead.id];
@@ -1228,6 +1525,41 @@ export default function LeadScoring({ onUpdateScoringCount, addLog }) {
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
                         {AUDITS[detail.preset]?.name || detail.preset} · {fmtShort(detail.ts)} · {detail.provider}
                       </div>
+
+                      {detail.approach && (detail.approach.whatsapp || detail.approach.email || detail.approach.followUp) ? (
+                        <div className="sc-approach-list">
+                          <div className="exp-sec">
+                            Abordagem
+                            {detail.provider === 'fallback' ? <small> · gerada pelas regras locais</small> : null}
+                          </div>
+                          <ApproachBlock title="Mensagem de WhatsApp" text={detail.approach.whatsapp} />
+                          <ApproachBlock title="E-mail" text={detail.approach.email} />
+                          <ApproachBlock title="Follow-up" text={detail.approach.followUp} />
+                          {detail.approach.objections.length ? (
+                            <div className="sc-approach">
+                              <div className="sc-approach-head">
+                                <b>Objeções prováveis</b>
+                                <CopyButton
+                                  text={detail.approach.objections.map((item) => `"${item.q}"\n${item.a}`).join('\n\n')}
+                                  label="Copiar todas"
+                                />
+                              </div>
+                              <dl className="sc-objections">
+                                {detail.approach.objections.map((item, i) => (
+                                  <div key={i}>
+                                    <dt>"{item.q}"</dt>
+                                    <dd>{item.a}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>
+                          Nenhuma mensagem de abordagem salva para este lead. Clique em Reanalisar para gerar.
+                        </div>
+                      )}
 
                       {[
                         { t: `Pontos positivos (${detail.pos.length})`, items: detail.pos },

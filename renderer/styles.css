@@ -7761,9 +7761,9 @@ body.route-whatsapp .app-screen-container { max-width: none; height: 100dvh; pad
 
 .kanban-manual-lead-modal { width: min(560px, 94vw); max-width: 560px; }
 .kanban-manual-lead-body { display: grid; gap: 13px; padding: 18px 20px 6px; }
-.kanban-manual-source { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.kanban-manual-source button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--muted); font: 600 12px var(--font-body); cursor: pointer; }
-.kanban-manual-source button:hover, .kanban-manual-source button.active { border-color: var(--accent); background: var(--accent-soft); color: #087b5e; }
+.kanban-manual-source, .extraction-source { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.kanban-manual-source button, .extraction-source button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--muted); font: 600 12px var(--font-body); cursor: pointer; }
+.kanban-manual-source button:hover, .kanban-manual-source button.active, .extraction-source button:hover, .extraction-source button.active { border-color: var(--accent); background: var(--accent-soft); color: #087b5e; }
 .kanban-manual-lead-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .kanban-manual-lead-grid .field { min-width: 0; }
 .kanban-manual-lead-grid input, .kanban-manual-lead-grid select, .kanban-manual-lead-body > .field select { width: 100%; box-sizing: border-box; min-height: 40px; }
@@ -8366,6 +8366,10 @@ body.route-whatsapp .app-screen-container { overflow: hidden; }
 .settings-update-progress small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .settings-update-status { display: flex; align-items: center; gap: 6px; margin: 0; color: #087b5e; font-size: 12px; }
 .settings-update-status.warn { color: #9f2d21; }
+.settings-maps-key { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-maps-key input { flex: 1 1 260px; min-height: 36px; }
+.extraction-source-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.extraction-source-hint.warn { color: #9f2d21; }
 @media (min-width: 900px) and (max-width: 1180px) {
   .kanban-topbar { align-items: flex-start; flex-direction: column; }
   .kanban-actions { justify-content: flex-start; }

@@ -1,0 +1,44 @@
+name: sigma
+
+services:
+  desktop:
+    build:
+      context: ../..
+      dockerfile: deploy/desktop/Dockerfile
+    image: ${SIGMA_IMAGE:-sigma-desktop:local}
+    restart: unless-stopped
+    stop_grace_period: 45s
+    ports:
+      - "127.0.0.1:6080:6080"
+    environment:
+      TZ: America/Sao_Paulo
+      SIGMA_SCREEN: ${SIGMA_SCREEN:-1440x900x24}
+    volumes:
+      - profile:/data
+    secrets:
+      - vnc-password
+    # Limites iniciais; confirmar margem na VPS antes do primeiro deploy.
+    cpus: ${SIGMA_CPUS:-1.0}
+    mem_limit: ${SIGMA_MEMORY:-2g}
+    shm_size: 256m
+    pids_limit: 512
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /run/sigma:size=16m,uid=1000,gid=1000,mode=0700
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  profile:
+
+secrets:
+  vnc-password:
+    file: ${SIGMA_SECRETS_DIR:-./secrets}/vnc-password

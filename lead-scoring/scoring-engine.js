@@ -113,8 +113,23 @@ function listSitePains(company, site = {}, digitalPainRules = DEFAULT_RULES.digi
   return pains;
 }
 
+// Perfil de rede social, agregador de links ou marketplace não é site próprio:
+// não há o que auditar, e para quem vende site é a mesma oportunidade de quem não tem nada.
+const NOT_OWN_SITE_KINDS = new Set(["none", "invalid", "social", "link_aggregator", "marketplace"]);
+
+function hasOwnWebsite(company = {}, site = {}) {
+  if (!company.website) return false;
+  return !NOT_OWN_SITE_KINDS.has(site.digitalPresence?.kind);
+}
+
+/** Empresa como o motor deve enxergar: link que não é site próprio conta como sem site. */
+function scoringCompany(company = {}, site = {}) {
+  if (!company.website || hasOwnWebsite(company, site)) return company;
+  return { ...company, website: "", websiteOnlyProfile: site.digitalPresence?.platform || site.digitalPresence?.kind || "perfil" };
+}
+
 function calculateScore(lead, siteAnalysis = {}, aiSignal = {}, settings = {}) {
-  const company = lead.company || {};
+  const company = scoringCompany(lead.company || {}, siteAnalysis);
   const rules = resolveRules(settings);
   const commercialFit = scoreCommercialFit(company, rules.commercialFit);
   const digitalPain = scoreDigitalPain(company, siteAnalysis, rules.digitalPain);
@@ -238,8 +253,16 @@ function scoreConversionPotential(company, site, rules = DEFAULT_RULES.conversio
 function buildReasons(company, site, score, pains = []) {
   const reasons = [];
   const siteReachable = !company.website || !site.digitalPresence || site.digitalPresence.reachable === true;
-  if (!company.website) {
+  if (!company.website && company.websiteOnlyProfile) {
+    reasons.push(`Usa só ${PROFILE_LABELS[company.websiteOnlyProfile] || "um perfil externo"} como site: boa chance de oferecer um site próprio.`);
+  } else if (!company.website) {
     reasons.push("Empresa sem site: boa chance de oferecer um site ou página simples (mas sites com falhas vêm antes na fila).");
+  }
+  if (!company.website && Number(company.reviewCount || 0) >= 50 && Number(company.rating || 0) >= 4) {
+    reasons.push("Bem avaliada no Google e sem site: já tem clientes, só falta presença própria.");
+  }
+  if (!company.website && !company.phone && !company.whatsapp) {
+    reasons.push("Sem site e sem telefone no cadastro: será difícil fazer o primeiro contato.");
   }
   if (company.website && !siteReachable) {
     reasons.push("O site não respondeu à análise; a prioridade considera apenas os dados comerciais e de contato confirmados.");
@@ -265,6 +288,18 @@ function buildReasons(company, site, score, pains = []) {
   if (score < 40) reasons.push("Por enquanto vale menos a pena investir tempo neste lead.");
   return reasons;
 }
+
+const PROFILE_LABELS = {
+  instagram: "o Instagram",
+  facebook: "o Facebook",
+  tiktok: "o TikTok",
+  linkedin: "o LinkedIn",
+  whatsapp: "o WhatsApp",
+  linktree: "um Linktree",
+  link_aggregator: "uma página de links",
+  marketplace: "um marketplace",
+  social: "uma rede social",
+};
 
 function classify(score, thresholds) {
   const t = thresholds || DEFAULT_RULES.thresholds;
@@ -298,6 +333,8 @@ module.exports = {
   listSitePains,
   hasMediaPixel,
   buildReasons,
+  hasOwnWebsite,
+  scoringCompany,
   scoreCommercialFit,
   scoreContactability,
   scoreConversionPotential,

@@ -87,6 +87,23 @@ test('análise avulsa recusa lead sem site com erro codificado', () => withServi
   );
 }));
 
+test('opção analyzeNoWebsite passa a avaliar leads sem site', () => withService(async (service) => {
+  assert.equal(service.getSettings().analysis.analyzeNoWebsite, false);
+  service.updateSettings({ analysis: { analyzeNoWebsite: true } });
+  const result = await service.analyzeBatch([{ ...SCRAPED_LEAD, id: 'sem-site-ok' }], { query: 'dentistas' });
+  assert.equal(result.skipped, 0);
+  assert.equal(result.analyzedCount, 1);
+  const saved = await service.analyzeLead({ ...SCRAPED_LEAD }, {});
+  assert.ok(saved.score.value > 0);
+  assert.ok(saved.aiAnalysis.mensagem_whatsapp.includes('Odonto Lume'));
+}));
+
+test('skipNoWebsite explícito vence a configuração', () => withService(async (service) => {
+  service.updateSettings({ analysis: { analyzeNoWebsite: true } });
+  const result = await service.analyzeBatch([SCRAPED_LEAD], { skipNoWebsite: true });
+  assert.equal(result.skipped, 1);
+}));
+
 test('score salvo é reencontrado por identidade depois de reimportar a base', () => withService(async (service) => {
   await service.analyzeBatch([SCRAPED_LEAD], { skipNoWebsite: false });
   const [saved] = service.getAll({}).leads;

@@ -1,9 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import appConfig from './config.js';
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __WHATSAPP_ENABLED__: JSON.stringify(!!appConfig.WHATSAPP_ENABLED),
+  },
   root: path.resolve(__dirname, 'renderer'),
   base: './',
   build: {

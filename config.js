@@ -10,6 +10,9 @@ module.exports = {
   REQUEST_BLOCK_TYPES: [],
   USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
 
+  // Desligado: nenhuma sessão é aberta e nenhuma mensagem/campanha é enviada.
+  // Mude para true e rode `npm run build:renderer` para reativar.
+  WHATSAPP_ENABLED: false,
   WHATSAPP_DEFAULT_COUNTRY_CODE: '55',
   WHATSAPP_MIN_INTERVAL_MS: 5000,
   WHATSAPP_MAX_MESSAGE_LENGTH: 4096,

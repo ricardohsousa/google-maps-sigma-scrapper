@@ -1,3 +1,5 @@
+const { hasOwnWebsite } = require("./scoring-engine");
+
 async function analyzeWithSalesAI(lead, siteAnalysis, score, settings) {
   const ai = settings?.ai || {};
   if (!ai.enabled || !ai.apiKey) {
@@ -426,6 +428,8 @@ function buildPromptPayload(lead, siteAnalysis, score, settings) {
     oferta: settings?.analysis?.offerType || "site_landing_sistema",
     empresa: lead.company,
     score_base: score,
+    presenca_digital: describePresence(lead.company, siteAnalysis),
+    ...(hasOwnWebsite(lead.company, siteAnalysis) ? {} : { regra_sem_site: NO_SITE_RULE }),
     dados_tecnicos_resumidos: {
       url: siteAnalysis.finalUrl,
       cms: siteAnalysis.cms,
@@ -464,16 +468,31 @@ function buildPromptPayload(lead, siteAnalysis, score, settings) {
   };
 }
 
+const NO_SITE_RULE = "Quando presenca_digital.tem_site_proprio for false, nao ha site para auditar: ignore os dados tecnicos vazios. Avalie pelo Google Maps (avaliacoes, nota, categoria, cidade) e pelos canais de contato. A oferta e criar um site ou landing page; as mensagens nao podem citar problemas de um site que nao existe. Se a empresa usa so rede social ou pagina de links, cite isso como ponto de partida.";
+
+function describePresence(company = {}, site = {}) {
+  const own = hasOwnWebsite(company, site);
+  return {
+    tem_site_proprio: own,
+    tipo: own ? (site.digitalPresence?.kind || "own_domain") : (company.website ? site.digitalPresence?.kind || "perfil" : "sem_site"),
+    plataforma: site.digitalPresence?.platform || "",
+    link_informado: company.website || "",
+    site_respondeu: own ? site.digitalPresence?.reachable === true : null,
+  };
+}
+
 function buildBatchPromptPayload(items, settings) {
   return {
     tarefa: "Avaliar em lote se cada lead vale prospeccao para vender site, landing page ou sistema.",
     idioma: settings?.analysis?.language || "pt-BR",
     oferta: settings?.analysis?.offerType || "site_landing_sistema",
     regra: "Use os campos siteSummary/conversion.likelyLeaks como insumo principal. Avalie copy real, clareza, CTA, confianca, quebra de objecoes e potencial comercial. Retorne JSON no formato {\"leads\": [...]} mantendo leadId.",
+    regra_sem_site: NO_SITE_RULE,
     leads: items.map((item) => ({
       leadId: item.lead.id,
       empresa: item.lead.company,
       score_base: item.score,
+      presenca_digital: describePresence(item.lead.company, item.siteAnalysis),
       siteSummary: item.siteAnalysis.siteSummary || {},
       dados_tecnicos_resumidos: {
         url: item.siteAnalysis.finalUrl,
@@ -567,6 +586,7 @@ function shouldTryNextProvider(error) {
 
 function fallbackSalesAnalysis(lead, siteAnalysis, score, settings, warning = "") {
   const c = lead.company || {};
+  if (!hasOwnWebsite(c, siteAnalysis)) return fallbackNoSiteAnalysis(lead, siteAnalysis, score, settings, warning);
   const hasSite = !!c.website;
   const mainPain = pickMainPain(c, siteAnalysis);
   const opportunity = pickOpportunity(c, siteAnalysis);
@@ -617,6 +637,75 @@ function fallbackSalesAnalysis(lead, siteAnalysis, score, settings, warning = ""
       { objecao: "Já tenho site.", resposta: "Perfeito. A ideia não é trocar por trocar — é ver se o site está gerando contatos de verdade." },
       { objecao: "Não preciso agora.", resposta: "Entendo. Posso te mandar uma análise curta para você guardar e avaliar quando fizer sentido." },
       { objecao: "Está caro.", resposta: "Podemos começar com uma página enxuta, focada em gerar orçamentos." },
+    ],
+    warning,
+    rawProvider: "fallback",
+  };
+}
+
+// Sem site próprio a conversa é outra: não há site para criticar, e sim
+// clientes que já acham a empresa no Google e não têm para onde ir.
+function fallbackNoSiteAnalysis(lead, siteAnalysis, score, settings, warning = "") {
+  const c = lead.company || {};
+  const companyName = c.name || "sua empresa";
+  const reviews = Number(c.reviewCount || 0);
+  const rating = Number(c.rating || 0);
+  const wellRated = reviews >= 20 && rating >= 4;
+  const profile = siteAnalysis.digitalPresence?.platform || "";
+  const profileLabel = profile ? profile.charAt(0).toUpperCase() + profile.slice(1) : "";
+  const reachable = !!(c.phone || c.whatsapp);
+  const service = (settings?.commercial?.services || ["site"])[0] || "site";
+  const mainPain = profileLabel
+    ? `A empresa depende só do ${profileLabel}; quem pesquisa no Google não encontra uma página própria.`
+    : "A empresa não tem site: quem pesquisa no Google não encontra uma página própria.";
+  const hook = wellRated
+    ? `vocês têm ${reviews} avaliações com nota ${rating.toFixed(1)}, mas quem busca no Google não encontra um site para conhecer melhor`
+    : profileLabel
+      ? `o principal canal de vocês é o ${profileLabel}, e quem pesquisa no Google não acha um site próprio`
+      : "vocês ainda não têm um site, e quem pesquisa no Google acaba indo para a concorrência";
+  const opportunity = wellRated
+    ? "Criar um site que aproveite as avaliações do Google como prova social e leve o visitante direto para o WhatsApp."
+    : "Criar um site simples e profissional para aparecer melhor no Google e receber pedidos de orçamento.";
+  const priorityLabel = score.classification || "Prioridade a avaliar";
+  return {
+    score: score.value,
+    prioridade: score.priority,
+    vale_prospectar: score.worthProspecting,
+    chance_resposta: reachable && score.value >= 60 ? "media" : "baixa",
+    chance_reuniao: wellRated && reachable ? "media" : "baixa",
+    ticket_estimado: reviews >= 100 ? "medio" : "baixo",
+    grau_de_urgencia: wellRated ? "medio" : "baixo",
+    facilidade_de_convencer: wellRated ? "media" : "baixa",
+    principais_dores: [
+      mainPain,
+      wellRated
+        ? "Boa reputação no Google que não vira visita a um site."
+        : "Pouca prova de confiança para quem ainda não conhece a empresa.",
+      reachable
+        ? "Todo contato depende do telefone ou do perfil, sem página para tirar dúvidas antes."
+        : "Sem site e sem telefone visível, o cliente tem dificuldade de chegar até a empresa.",
+    ],
+    principais_oportunidades: [
+      opportunity,
+      "Página com serviços, localização e botão de WhatsApp.",
+      "Aparecer melhor nas buscas locais do Google.",
+    ],
+    resumo: `${companyName}: nota ${score.value}/100 (${priorityLabel}). ${score.reasons?.[0] || "Empresa sem site próprio."}`,
+    resumo_empresa: `${companyName}${c.category ? ` trabalha com ${c.category}` : ""}${c.city ? ` em ${c.city}` : ""}.`,
+    problemas_encontrados: [
+      mainPain,
+      wellRated ? "As avaliações positivas ficam presas no Google Maps." : "Pouca informação para o cliente decidir antes de chamar.",
+      "Sem página própria para anunciar ou divulgar.",
+    ],
+    argumento_principal_venda: opportunity,
+    mensagem_whatsapp: `Oi, ${companyName}! Tudo bem? Encontrei vocês no Google e vi que ${hook}. Trabalho com ${service} para empresas locais receberem mais pedidos pelo WhatsApp. Posso te mostrar uma ideia rápida de como ficaria?`,
+    assunto_email: `Um site para a ${companyName}`,
+    primeiro_email: `Olá, ${companyName}.\n\nEncontrei vocês pelo Google e vi que ${hook}.\n\nCrio sites e páginas simples para empresas locais, com os serviços, a localização e um botão direto para o WhatsApp. Isso ajuda quem já procura por vocês a virar cliente.\n\nPosso te mandar um rascunho de como ficaria?`,
+    mensagem_follow_up: `Oi, ${companyName}. Passando para reforçar: posso te mostrar um rascunho de site para vocês, sem compromisso. Faz sentido?`,
+    objecoes_provaveis: [
+      { objecao: profileLabel ? `Já tenho ${profileLabel}.` : "Não preciso de site.", resposta: "O perfil continua. O site é o que aparece para quem busca no Google e ainda não segue vocês." },
+      { objecao: "Os clientes já me acham.", resposta: "Ótimo sinal. O site serve para não perder quem pesquisa e compara antes de chamar." },
+      { objecao: "Está caro.", resposta: "Dá para começar com uma página enxuta e evoluir depois." },
     ],
     warning,
     rawProvider: "fallback",

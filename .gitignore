@@ -17,3 +17,10 @@ nul
 !assets/*.png
 !assets/*.ico
 renderer/mr*.png
+deploy/desktop/secrets/
+deploy/desktop/.env
+deploy/desktop/backups/
+deploy/web/.env
+deploy/web/secrets/
+sigma-data/
+.local-backups/

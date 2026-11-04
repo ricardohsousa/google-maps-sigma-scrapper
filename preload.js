@@ -1,8 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  startScrape: (query, maxResults, queryId, progressContext = {}) =>
-    ipcRenderer.invoke("start-scrape", { query, maxResults, queryId, progressContext }),
+  exportDataBackup: (localStorage) => ipcRenderer.invoke("data-backup-export", { localStorage }),
+  startScrape: (query, maxResults, queryId, progressContext = {}, source) =>
+    ipcRenderer.invoke("start-scrape", { query, maxResults, queryId, progressContext, source }),
+  getMapsSettings: () => ipcRenderer.invoke("maps-settings-get"),
+  setMapsSettings: (patch) => ipcRenderer.invoke("maps-settings-set", patch),
+  testPlacesApiKey: (apiKey) => ipcRenderer.invoke("maps-test-places-key", { apiKey }),
   cancelScrape: (queryId) =>
     ipcRenderer.invoke("cancel-scrape", { queryId }),
   repairMapAddresses: (leads) =>

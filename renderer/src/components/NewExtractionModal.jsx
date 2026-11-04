@@ -72,6 +72,9 @@ export default function NewExtractionModal({
   const [bairroInput, setBairroInput] = useState('');
   const [bairros, setBairros] = useState([]);
 
+  const [source, setSource] = useState('scraper');
+  const [hasPlacesKey, setHasPlacesKey] = useState(false);
+
   const carViewRef = useRef(null);
 
   useEffect(() => {
@@ -85,6 +88,12 @@ export default function NewExtractionModal({
       setCidadeError(false);
       setBairroInput('');
       setBairros([]);
+      window.electronAPI?.getMapsSettings?.()
+        .then((settings) => {
+          setSource(settings?.defaultSource || 'scraper');
+          setHasPlacesKey(!!settings?.hasPlacesApiKey);
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
 
@@ -182,6 +191,7 @@ export default function NewExtractionModal({
       return;
     }
     // Step 3 - Start extraction!
+    if (source === 'places-api' && !hasPlacesKey) return;
     const niches = splitBatchInput(nicho, { max: 20, maxLen: 80 });
     const neigh = bairros.length > 0 ? bairros.join(', ') : '';
     const city = `${cidadeObj?.n || cidadeInput.trim()}, ${cidadeObj?.uf || cidadeUf}`;
@@ -191,7 +201,8 @@ export default function NewExtractionModal({
       neigh,
       neighborhoods: [...bairros],
       city,
-      limit: 1000
+      limit: 1000,
+      source,
     });
     onClose();
   };
@@ -391,6 +402,27 @@ export default function NewExtractionModal({
                 ))}
               </div>
 
+              <div className="field" style={{ marginTop: '12px' }}>
+                <label>Origem dos dados</label>
+                <div className="extraction-source" role="group" aria-label="Origem dos dados">
+                  <button type="button" className={source === 'scraper' ? 'active' : ''} aria-pressed={source === 'scraper'} onClick={() => setSource('scraper')}>
+                    Scraper do Maps
+                  </button>
+                  <button type="button" className={source === 'places-api' ? 'active' : ''} aria-pressed={source === 'places-api'} onClick={() => setSource('places-api')}>
+                    API oficial (Places)
+                  </button>
+                </div>
+                {source === 'places-api' ? (
+                  <span className={`extraction-source-hint ${hasPlacesKey ? '' : 'warn'}`}>
+                    {hasPlacesKey
+                      ? 'Até 60 empresas por busca. Para cobrir mais, adicione bairros. Cobrado na sua conta Google Cloud.'
+                      : 'Nenhuma chave configurada. Adicione a chave da Places API em Configurações antes de iniciar.'}
+                  </span>
+                ) : (
+                  <span className="extraction-source-hint">Abre o Google Maps em um navegador oculto. Sem custo, mas mais lento e sujeito a bloqueios.</span>
+                )}
+              </div>
+
               <div className="wz-review" style={{ marginTop: '12px' }}>
                 <b>{detectedNiches.length > 1 ? `${detectedNiches.length} nichos` : (nicho || '—')}</b>
                 <span> · {cidadeLabel()} · {bairros.length ? `${bairros.length} bairro(s)` : 'município inteiro'}</span>
@@ -412,7 +444,7 @@ export default function NewExtractionModal({
               Voltar
             </button>
           )}
-          <button type="button" className="btn btn-primary" disabled={isProcessing} onClick={handleNext}>
+          <button type="button" className="btn btn-primary" disabled={isProcessing || (step === 3 && source === 'places-api' && !hasPlacesKey)} onClick={handleNext}>
             {isProcessing ? 'Extração em andamento…' : (step === 3 ? 'Iniciar extração' : 'Continuar')}
           </button>
         </div>

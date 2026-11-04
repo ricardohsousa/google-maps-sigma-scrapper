@@ -289,4 +289,10 @@ async function scrapeEmails(browser, url, onProgress, cancelToken = null) {
   }
 }
 
-module.exports = { scrapeGoogleMaps };
+module.exports = {
+  scrapeGoogleMaps,
+  scrapeEmails,
+  normalizePlaceText,
+  describeExtractedPlace,
+  checkCancelled,
+};

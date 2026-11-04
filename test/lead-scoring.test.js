@@ -415,3 +415,33 @@ test("AI score is blended exactly once and reasons follow final score", () => {
   assert.equal(saved.score.components.aiScore, 100);
   assert.ok(saved.score.reasons.every((reason) => !/vale menos a pena/i.test(reason)));
 });
+
+test("perfil de rede social como site conta como sem site próprio", () => {
+  const company = { name: "Studio Bella", category: "Estética", phone: "(21) 98888-1111", rating: 4.7, reviewCount: 90 };
+  const instagramSite = {
+    digitalPresence: { kind: "social", platform: "instagram", reachable: null },
+    finalUrl: "https://instagram.com/studiobella",
+    conversion: {},
+    tracking: {},
+  };
+  const viaInstagram = calculateScore({ company: { ...company, website: "https://instagram.com/studiobella" } }, instagramSite);
+  const noSite = calculateScore({ company: { ...company, website: "" } }, {});
+
+  assert.equal(viaInstagram.value, noSite.value);
+  assert.ok(viaInstagram.components.digitalPain > 0);
+  assert.ok(viaInstagram.reasons.some((reason) => reason.includes("Instagram")));
+});
+
+test("fallback de lead sem site não fala de problemas de um site inexistente", () => {
+  const lead = {
+    company: { name: "Padaria Sol", category: "Padaria", phone: "(11) 97777-0000", website: "", rating: 4.8, reviewCount: 150 },
+  };
+  const score = calculateScore(lead, {});
+  const analysis = fallbackSalesAnalysis(lead, {}, score, {});
+  const text = [analysis.mensagem_whatsapp, ...analysis.problemas_encontrados, ...analysis.principais_dores].join(" ");
+  assert.ok(analysis.mensagem_whatsapp.includes("Padaria Sol"));
+  assert.ok(analysis.mensagem_whatsapp.includes("150 avaliações"));
+  assert.doesNotMatch(text, /no site|do site não|o site existe/i);
+  assert.equal(analysis.principais_dores.length, 3);
+  assert.equal(analysis.objecoes_provaveis.length, 3);
+});

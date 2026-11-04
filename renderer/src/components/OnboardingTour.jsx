@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Compass, Sparkles, MessageSquare, X, ArrowRight, Check } from 'lucide-react';
 
-const STEPS = [
+const ALL_STEPS = [
   {
     id: 'scraper',
     icon: Compass,
@@ -27,6 +27,8 @@ const STEPS = [
     targetTab: 'whatsapp',
   },
 ];
+
+const STEPS = __WHATSAPP_ENABLED__ ? ALL_STEPS : ALL_STEPS.filter((step) => step.targetTab !== 'whatsapp');
 
 export default function OnboardingTour({ onNavigate }) {
   const [open, setOpen] = useState(false);

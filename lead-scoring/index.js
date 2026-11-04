@@ -1,7 +1,7 @@
 const { ProspectingStore } = require("./prospecting-store");
 const { normalizeLead } = require("./normalizer");
 const { analyzeWebsite } = require("./site-crawler");
-const { calculateScore, classify, buildReasons } = require("./scoring-engine");
+const { calculateScore, classify, buildReasons, scoringCompany } = require("./scoring-engine");
 const { analyzeWithSalesAI, analyzeBatchWithSalesAI, testProviderConnection } = require("./ai-sales-analyzer");
 
 class LeadScoringService {
@@ -13,10 +13,15 @@ class LeadScoringService {
     this.lastAiWarning = "";
   }
 
-  /** Sem site próprio não há o que avaliar: regra global, salvo opt-out explícito. */
-  _shouldSkipNoWebsite(normalized, options = {}) {
-    if (options.skipNoWebsite === false) return false;
-    return !normalized?.company?.website;
+  /**
+   * Lead sem site é ignorado por padrão (economiza IA). A opção
+   * analysis.analyzeNoWebsite libera o score pelos dados do Maps;
+   * options.skipNoWebsite, quando informado, vence a configuração.
+   */
+  _shouldSkipNoWebsite(normalized, options = {}, settings = this.store.getSettings()) {
+    if (normalized?.company?.website) return false;
+    if (typeof options.skipNoWebsite === "boolean") return options.skipNoWebsite;
+    return settings?.analysis?.analyzeNoWebsite !== true;
   }
 
   _noWebsiteError(normalized) {
@@ -68,7 +73,7 @@ class LeadScoringService {
   async analyzeLead(rawLead, options = {}) {
     const settings = this.store.getSettings();
     const normalized = normalizeLead(rawLead, options);
-    if (this._shouldSkipNoWebsite(normalized, options)) throw this._noWebsiteError(normalized);
+    if (this._shouldSkipNoWebsite(normalized, options, settings)) throw this._noWebsiteError(normalized);
     const jobId = options.jobId || `ls_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const cancelToken = { cancelled: false };
     this.activeJobs.set(jobId, cancelToken);
@@ -108,7 +113,7 @@ class LeadScoringService {
         });
         try {
           const normalized = normalizeLead(lead, options);
-          if (this._shouldSkipNoWebsite(normalized, options)) {
+          if (this._shouldSkipNoWebsite(normalized, options, settings)) {
             results.push({ success: false, skipped: true, reason: "no-website", lead });
             this.onProgress({
               event: "skipped",
@@ -292,7 +297,7 @@ class LeadScoringService {
       }[finalScore.priority];
       finalScore.worthProspecting = finalScore.value >= Number(settings?.rules?.thresholds?.goodFrom || 60);
       finalScore.reasons = buildReasons(
-        normalized.company || {},
+        scoringCompany(normalized.company || {}, siteAnalysis),
         siteAnalysis,
         finalScore.value,
         finalScore.sitePains || [],

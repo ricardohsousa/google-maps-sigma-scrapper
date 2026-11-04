@@ -1,0 +1,52 @@
+name: sigma-web
+services:
+  web:
+    image: ${SIGMA_IMAGE:-sigma-web:local}
+    build:
+      context: ../..
+      dockerfile: deploy/web/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 45s
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      TZ: America/Sao_Paulo
+      SIGMA_OWNER_EMAIL: ${SIGMA_OWNER_EMAIL:?Informe o e-mail do proprietário inicial}
+      SIGMA_PUBLIC_ORIGIN: ${SIGMA_PUBLIC_ORIGIN:-https://sigma.ricardohenrique.com}
+      SIGMA_ACCESS_ISSUER: ${SIGMA_ACCESS_ISSUER:?Informe o domínio da equipe Access}
+      SIGMA_ACCESS_AUD: ${SIGMA_ACCESS_AUD:?Informe o AUD da aplicação Access}
+    volumes:
+      - profile:/data
+    cpus: ${SIGMA_CPUS:-1.0}
+    mem_limit: ${SIGMA_MEMORY:-3g}
+    shm_size: 256m
+    pids_limit: 512
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    command: [tunnel, --no-autoupdate, --metrics, "0.0.0.0:2000", run, --token-file, /run/secrets/tunnel-token]
+    depends_on:
+      web: { condition: service_healthy }
+    secrets: [tunnel-token]
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+volumes:
+  profile:
+secrets:
+  tunnel-token:
+    file: ${SIGMA_SECRETS_DIR:-./secrets}/tunnel-token

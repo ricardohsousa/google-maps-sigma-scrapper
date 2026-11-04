@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import WebWorkspace from './WebWorkspace';
+import { initializeWeb } from './web-runtime.mjs';
 import '../styles.css';
 import './openDesign/od.css';
 
@@ -459,8 +461,9 @@ class ErrorBoundary extends React.Component {
 console.info(`[SIGMA] UI build ${BUILD_STAMP}`);
 console.info('[SIGMA] location', typeof location !== 'undefined' ? location.href : '');
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <ErrorBoundary>
-    <App />
-  </ErrorBoundary>
-);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+initializeWeb().then(session => {
+  root.render(<ErrorBoundary>{session ? <WebWorkspace session={session} /> : <App />}</ErrorBoundary>);
+}).catch(error => {
+  root.render(<main style={{ padding: 32, fontFamily: 'system-ui' }}><h1>Não foi possível entrar no Sigma</h1><p role="alert">{error.message}</p><button onClick={() => location.reload()}>Tentar novamente</button></main>);
+});

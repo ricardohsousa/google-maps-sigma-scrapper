@@ -23,6 +23,8 @@ try {
   ffmpegPath = require("ffmpeg-static") || "ffmpeg";
 } catch (e) {}
 const { scrapeGoogleMaps } = require("./scraper");
+const { searchPlacesApi, testPlacesApiKey } = require("./places-api");
+const mapsSettings = require("./utils/maps-settings");
 const { saveToCSV } = require("./utils/csv");
 const { saveReport } = require("./utils/report");
 const {
@@ -36,6 +38,7 @@ const {
   resolveInside,
 } = require("./utils/security");
 const { WhatsAppProviderFactory } = require("./whatsapp/provider");
+const CONFIG = require("./config");
 const { normalizePhone } = require("./whatsapp/phone-normalizer");
 const { CampaignManager } = require("./campaigns/campaign-manager");
 const {
@@ -1442,7 +1445,7 @@ app.whenReady().then(() => {
   if (bootRecovery.missedCount > 0) {
     console.log(`[CAMPAIGN] ${bootRecovery.missedCount} campaign(s) paused for missed schedule (recovery popup on UI).`);
   }
-  const rearmed = campaignManager.rearmScheduled();
+  const rearmed = CONFIG.WHATSAPP_ENABLED ? campaignManager.rearmScheduled() : 0;
   if (rearmed > 0) {
     console.log(`[CAMPAIGN] ${rearmed} future scheduled campaign(s) re-armed automatically.`);
   }
@@ -1475,7 +1478,7 @@ app.whenReady().then(() => {
 
   // Auto-reconnect saved WhatsApp sessions after renderer loads
   mainWindow.webContents.on("did-finish-load", () => {
-    if (process.env.SIGMA_QA !== "1") setTimeout(() => autoReconnectSessions(), 2000);
+    if (process.env.SIGMA_QA !== "1" && CONFIG.WHATSAPP_ENABLED) setTimeout(() => autoReconnectSessions(), 2000);
   });
 });
 
@@ -1731,6 +1734,26 @@ ipcMain.handle("migrate-existing-data", async (_, { localStorage } = {}) => {
   }
 });
 
+ipcMain.handle("data-backup-export", async (_, { localStorage } = {}) => {
+  try {
+    const { createBackup } = require("./utils/data-backup");
+    const backup = createBackup(app.getPath("userData"), localStorage);
+    const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+      title: "Exportar backup dos dados do Sigma",
+      defaultPath: `sigma-backup-${Date.now()}.json`,
+      filters: [{ name: "Backup Sigma", extensions: ["json"] }],
+    });
+    if (canceled || !filePath) return { success: false, cancelled: true };
+    const targetFile = path.join(fs.realpathSync(path.dirname(filePath)), path.basename(filePath));
+    const relative = path.relative(fs.realpathSync(app.getPath("userData")), targetFile);
+    if (!(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))) throw new Error("Escolha uma pasta fora do perfil do Sigma para salvar o backup.");
+    const temporary = `${targetFile}.${Date.now()}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(backup), { mode: 0o600 });
+    fs.renameSync(temporary, targetFile);
+    return { success: true };
+  } catch (error) { return { success: false, error: error.message }; }
+});
+
 // ─── KANBAN GERAL ───────────────────────────
 // O renderer só envia fontes de leads. Configuração, regras, histórico e
 // persistência ficam no processo principal para não depender do localStorage.
@@ -1848,7 +1871,7 @@ ipcMain.handle("metrics-settings-set", async (_, patch = {}) => {
 });
 
 // ─── START SCRAPE ──────────────────────────
-ipcMain.handle("start-scrape", async (_, { query, maxResults, queryId, progressContext } = {}) => {
+ipcMain.handle("start-scrape", async (_, { query, maxResults, queryId, progressContext, source } = {}) => {
   const cleanQuery = limitString(query, MAX_QUERY_LENGTH).trim();
   const cleanMaxResults = clampInteger(maxResults, 1, MAX_SCRAPE_RESULTS, 30);
   const key = limitString(queryId, 80, "") || `scrape_${Date.now()}`;
@@ -1867,8 +1890,13 @@ ipcMain.handle("start-scrape", async (_, { query, maxResults, queryId, progressC
   try {
     if (!cleanQuery) throw new Error("A consulta da extração é obrigatória.");
     try { appMetrics.track("scrape_started", { maxResults: cleanMaxResults, queryLen: cleanQuery.length }); } catch {}
-    emitProgress({ status: "started", current: 0, total: cleanMaxResults, message: `Iniciando extração: ${cleanQuery}` });
-    const result = await scrapeGoogleMaps(
+    const settings = mapsSettings.load();
+    const useApi = (mapsSettings.SOURCES.includes(source) ? source : settings.defaultSource) === "places-api";
+    emitProgress({ status: "started", current: 0, total: cleanMaxResults, message: `Iniciando extração${useApi ? " (API oficial)" : ""}: ${cleanQuery}` });
+    const runSearch = useApi
+      ? (...args) => searchPlacesApi(...args, { apiKey: settings.placesApiKey })
+      : scrapeGoogleMaps;
+    const result = await runSearch(
       cleanQuery,
       cleanMaxResults,
       (event) => {
@@ -2007,6 +2035,22 @@ ipcMain.handle("repair-map-addresses", async (_, { leads } = {}) => {
   }
 
   return { success: true, partial: failures.length > 0, repaired, failures };
+});
+
+ipcMain.handle("maps-settings-get", async () => mapsSettings.getPublic());
+
+ipcMain.handle("maps-settings-set", async (_, patch = {}) => {
+  try {
+    return { success: true, settings: mapsSettings.update(patch) };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("maps-test-places-key", async (_, { apiKey } = {}) => {
+  const key = typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : mapsSettings.load().placesApiKey;
+  if (!key) return { success: false, error: "Nenhuma chave informada." };
+  return testPlacesApiKey(key);
 });
 
 ipcMain.handle("cancel-scrape", async (_, { queryId } = {}) => {
@@ -3705,6 +3749,7 @@ ipcMain.handle("campaign-delete", async (_, { id }) => {
 
 ipcMain.handle("campaign-start", async (_, { id, connectionId, confirmRecovery = false, forceNow = false } = {}) => {
   try {
+    if (!CONFIG.WHATSAPP_ENABLED) throw new Error("WhatsApp desativado: campanhas não podem enviar mensagens.");
     if (!campaignManager) throw new Error("Campaign manager não inicializado");
     // Garante mapa de providers atualizado
     campaignManager.setProvidersMap(whatsappProviders);
@@ -3801,6 +3846,7 @@ ipcMain.handle("campaign-recovery-resolve", async (_, { id, choice, connectionId
 
 ipcMain.handle("campaign-resume", async (_, { id, connectionId, forceNow = false } = {}) => {
   try {
+    if (!CONFIG.WHATSAPP_ENABLED) throw new Error("WhatsApp desativado: campanhas não podem enviar mensagens.");
     if (!campaignManager) throw new Error("Campaign manager não inicializado");
     campaignManager.setProvidersMap(whatsappProviders);
     const preferred =
@@ -3818,6 +3864,7 @@ ipcMain.handle("campaign-resume", async (_, { id, connectionId, forceNow = false
 
 ipcMain.handle("campaign-retry-failed", async (_, { id, connectionId } = {}) => {
   try {
+    if (!CONFIG.WHATSAPP_ENABLED) throw new Error("WhatsApp desativado: campanhas não podem enviar mensagens.");
     if (!campaignManager) throw new Error("Campaign manager não inicializado");
     campaignManager.setProvidersMap(whatsappProviders);
     const preferred =

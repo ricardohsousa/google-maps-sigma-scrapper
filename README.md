@@ -1,9 +1,16 @@
 # Sigma GMaps Scraper
 
+**Comece pelo [manual completo de publicação na OCI](PASSO_A_PASSO_SIGMA_OCI.md)**:
+ele reúne o processo, o estado já validado e as etapas de Cloudflare, GitHub,
+deploy e migração da base local.
+
+Versão web com Cloudflare Access, perfis Proprietário/Operador e migração da
+base local: [implantação e configuração na OCI](deploy/web/README.md).
+
 Desktop local-first para transformar pesquisas do Google Maps em uma operação de prospecção: encontrar empresas, organizar leads, priorizar oportunidades e iniciar conversas pelo WhatsApp.
 
-[![Release](https://img.shields.io/github/v/release/olucianobotelho/google-maps-sigma-scrapper?display_name=tag)](https://github.com/olucianobotelho/google-maps-sigma-scrapper/releases)
-[![License](https://img.shields.io/github/license/olucianobotelho/google-maps-sigma-scrapper)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ricardohsousa/google-maps-sigma-scrapper?display_name=tag)](https://github.com/ricardohsousa/google-maps-sigma-scrapper/releases)
+[![License](https://img.shields.io/github/license/ricardohsousa/google-maps-sigma-scrapper)](LICENSE)
 
 ## Fluxo do produto
 
@@ -64,7 +71,7 @@ O app combina scraping, tratamento de dados, análise comercial e execução de 
 
 ## Download para Windows
 
-Baixe a [release mais recente](https://github.com/olucianobotelho/google-maps-sigma-scrapper/releases).
+Baixe a [release mais recente](https://github.com/ricardohsousa/google-maps-sigma-scrapper/releases).
 
 Na release `v1.1.9`, os arquivos são:
 
@@ -72,11 +79,13 @@ Na release `v1.1.9`, os arquivos são:
 - `Sigma-GMaps-Scraper-1.1.9-x64-complete.zip` — pacote portátil completo.
 - `latest.yml` e `.blockmap` — metadados usados pelo atualizador automático.
 
-Após instalar, abra o Sigma e comece por **Nova Extração**. Para campanhas, conecte um número em **WhatsApp → Sessão** ou salve primeiro um rascunho e conecte depois.
+Após instalar, abra o Sigma e comece por **Nova Extração**. Para usar a Places API oficial ou o Gemini no Lead Scoring, siga [Configurar as APIs do Google](docs/configurar-google-apis.md). O WhatsApp e as campanhas vêm desativados nesta versão (`WHATSAPP_ENABLED` em `config.js`).
 
 > O atualizador automático funciona na versão instalada pelo NSIS. Com o updater ativo, instalações anteriores podem detectar a `v1.1.9` e baixá-la pelo próprio app; instalações `win-unpacked`, portáteis ou com o updater indisponível precisam do download manual. `win-unpacked` é uma saída de teste local e não deve ser usada para validar atualização in-place.
 
 ## Desenvolvimento
+
+Passo a passo completo (instalação, testes, build e publicação): [Rodar o projeto](docs/rodar-o-projeto.md).
 
 ### Requisitos
 
@@ -121,17 +130,9 @@ scripts/capture-open-design-ui.js  QA visual determinístico
 test/                              Testes unitários e de integração local
 ```
 
-## Apoie o projeto
-
-Se o Sigma GMaps Scraper for útil para você, qualquer contribuição ajuda a manter o projeto:
-
-- **Pix:** `0501fe37-1008-43d1-9db1-1a4bc7ce6953`
-- **Nome:** Luciano Paiva Botelho
-- **Banco:** Nubank
-
 ## Contribuir e reportar problemas
 
-- Abra uma [Issue](https://github.com/olucianobotelho/google-maps-sigma-scrapper/issues) com versão, sistema operacional, passos para reproduzir e logs relevantes.
+- Abra uma [Issue](https://github.com/ricardohsousa/google-maps-sigma-scrapper/issues) com versão, sistema operacional, passos para reproduzir e logs relevantes.
 - Pull requests devem manter `npm test` e `npm run qa:ui` verdes.
 
 ## Licença

@@ -515,6 +515,7 @@ function defaultSettings() {
       screenshotRetentionDays: 60,
       blockHeavyAssets: true,
       autoAnalyzeAfterScrape: false,
+      analyzeNoWebsite: false,
       language: "pt-BR",
       offerType: "site_landing_sistema",
     },
