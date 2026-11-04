@@ -19,6 +19,9 @@ class WhatsAppProvider {
 }
 
 function WhatsAppProviderFactory(type, config, onStatus, onChatEvent, userDataPath) {
+  if (!require('../config').WHATSAPP_ENABLED) {
+    throw new Error('WhatsApp desativado nesta instalação (config.WHATSAPP_ENABLED).');
+  }
   if (type === 'baileys') {
     const { BaileysProvider } = require('./baileys-provider');
     return new BaileysProvider(config, onStatus, onChatEvent, userDataPath);

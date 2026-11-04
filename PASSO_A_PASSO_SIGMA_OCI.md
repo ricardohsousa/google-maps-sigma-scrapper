@@ -1329,6 +1329,7 @@ Monitore o espaço em disco para não acumular imagens indefinidamente.
 | `curl ... ghcr.io` retorna 405/401 | Houve resposta HTTPS; não indica bloqueio de rede |
 | `Could not resolve host` / `lookup ... timeout` | DNS; execute `getent`, `dig` e `resolvectl status` |
 | Configuração obrigatória ausente | Secret faltando ou cadastrado fora do escopo usado pelo job |
+| Deploy termina em 0s com apenas `exit code 1` | Versões anteriores tinham validações sem mensagem. Publique o script `deploy/desktop/deploy-action.sh` atualizado para identificar o campo inválido sem expor valores. Rerun de commit antigo continua usando o código antigo. |
 | Pipeline aguarda runner ARM | Confira disponibilidade do runner e se `OCI_ARCH` corresponde à máquina |
 | Arquitetura incompatível | `aarch64` usa `arm64`; `x86_64` usa `amd64` |
 | Erro de sudo na pipeline | Usuário precisa de acesso administrativo não interativo para instalação/operação do Docker |
@@ -1344,6 +1345,27 @@ Monitore o espaço em disco para não acumular imagens indefinidamente.
 | Novo e-mail em `SIGMA_OWNER_EMAIL` não vira proprietário | O Secret inicial não substitui o cadastro persistido; use o proprietário atual para cadastrar o novo |
 
 ### 18.1. Se o primeiro deploy falhar
+
+Na versão atual do script, as validações informam o nome da configuração
+inválida e o formato esperado. Depois aparecem marcadores de progresso:
+
+```text
+Configuração validada; verificando a referência da imagem.
+Release preparada; iniciando conexão SSH com a OCI.
+```
+
+Uma falha anterior ao segundo marcador não é evidência de problema no Docker
+da VPS: a preparação pode ter falhado antes de conectar. Confira primeiro a
+mensagem `::error::` no Actions. Não habilite `set -x` para obter detalhes,
+pois o script manipula chaves e tokens.
+
+O job `Build e smoke test` inclui instalação de dependências, testes, build
+da imagem, download do Chromium e publicação no GHCR. Cinco minutos no
+primeiro build, sem cache, não demonstram travamento. O job tem limite de
+35 minutos. Abra a etapa em execução e acompanhe os logs.
+O smoke test web tem até 90 verificações com intervalo de 2 segundos, além
+do tempo inicial de download/inicialização da imagem; não é um tempo mínimo
+de espera e termina assim que o container fica saudável.
 
 Na VPS, a primeira execução pode ainda não ter criado o atalho `current`.
 Nesse caso, confira as releases existentes:
