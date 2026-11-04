@@ -87,7 +87,8 @@ class SigmaService {
       const run = source === 'places-api' ? (...args) => require('../places-api').searchPlacesApi(...args, { apiKey: settings.placesApiKey }) : this.scraper;
       const result = await run(query, maxResults, event => this.emit('progress', { ...(payload.progressContext || {}), ...(typeof event === 'object' ? event : { message: event }), queryId, status: 'running' }), token);
       if (!result || result.success === false) throw new Error(result?.error || 'Extração não concluída.');
-      const data = (result.data || []).map(lead => ({ ...lead, id: lead.id || `web_${crypto.createHash('sha256').update(JSON.stringify([lead.name, lead.address, lead.phone])).digest('hex').slice(0, 24)}`, searchId: queryId, query }));
+      const { leadLocation } = await import('../utils/lead-location.mjs');
+      const data = (result.data || []).map(lead => ({ ...lead, ...leadLocation(lead), id: lead.id || `web_${crypto.createHash('sha256').update(JSON.stringify([lead.name, lead.address, lead.phone])).digest('hex').slice(0, 24)}`, searchId: queryId, query }));
       this.store.state.values.sigma_leads = JSON.stringify(mergeLeads(this.store.array('sigma_leads'), data));
       this.store.state.values.sigma_searches = JSON.stringify(mergeLeads(this.store.array('sigma_searches'), [{ id: queryId, query, source: 'maps', timestamp: Date.now() }]));
       this.store.save();

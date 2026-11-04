@@ -279,7 +279,6 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
   const [bHood, setBHood] = useState('');
   const [bGrupo, setBGrupo] = useState('');
   const [bRate, setBRate] = useState(0);
-  const [bChans, setBChans] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
 
   // Period
@@ -427,13 +426,9 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
     window.location.hash = '#whatsapp';
   };
 
-  const leadHasChan = (l, ch) => {
-    if (ch === 'tel' || ch === 'wa') return Boolean(getLeadTel(l));
-    if (ch === 'ig') return Boolean(getLeadIg(l));
-    if (ch === 'site') return Boolean(getLeadSite(l));
-    if (ch === 'mail') return Boolean(getLeadMail(l));
-    return false;
-  };
+  const leadHasChan = (lead, channel) => Boolean(leadChannels(lead)[
+    { tel: 'phone', wa: 'whatsapp', ig: 'instagram', site: 'site', mail: 'email' }[channel]
+  ]);
 
   const leadStatus = (leadId) => {
     const h = hist[leadId] || [];
@@ -467,39 +462,17 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
   }, [groups, leads]);
 
   // Filtered rows
-  const filteredLeads = useMemo(() => {
-    const q = norm(bq).trim();
-    return leads.filter((l, idx) => {
-      const id = getLeadId(l, idx);
-      const name = getLeadName(l);
-      const cat = getLeadCat(l);
-      const city = getLeadCity(l);
-      const uf = getLeadUf(l);
-      const hood = getLeadHood(l);
-      const tel = getLeadTel(l);
-      const ig = getLeadIg(l);
-      const rn = parseFloat(String(getLeadRating(l)).replace(',', '.')) || 0;
-
-      if (bCat && cat !== bCat) return false;
-      if (bUf && uf !== bUf) return false;
-      if (bCity && city !== bCity) return false;
-      if (bHood && hood !== bHood) return false;
-      if (bRate > 0 && rn < bRate) return false;
-      if (bGrupo) {
-        const members = groupLeadSets.get(String(bGrupo));
-        if (!members || !members.has(l)) return false;
-      }
-      for (const ch of bChans) {
-        if (!leadHasChan(l, ch)) return false;
-      }
-      if (!matchesLeadFilters(l, bSmart)) return false;
-      if (q) {
-        const fullText = norm(`${name} ${cat} ${city} ${uf} ${hood} ${tel} ${ig}`);
-        if (!fullText.includes(q)) return false;
-      }
-      return true;
+  const filteredLeads = useMemo(() => leads.filter((lead) => {
+    if (bGrupo && !groupLeadSets.get(String(bGrupo))?.has(lead)) return false;
+    return matchesLeadFilters({
+      ...lead,
+      name: getLeadName(lead), category: getLeadCat(lead),
+      city: getLeadCity(lead), state: getLeadUf(lead), neighborhood: getLeadHood(lead),
+    }, {
+      ...bSmart, category: bCat, city: bCity, state: bUf, neighborhood: bHood,
+      minRating: bRate, text: bq,
     });
-  }, [leads, bq, bCat, bUf, bCity, bHood, bRate, bGrupo, bChans, bSmart, groups]);
+  }), [leads, bq, bCat, bUf, bCity, bHood, bRate, bGrupo, bSmart, groupLeadSets]);
 
   // Stats calculation
   const stats = useMemo(() => {
@@ -600,8 +573,13 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
   // Unique options for filter selects
   const uniqueCategories = useMemo(() => [...new Set(leads.map(getLeadCat))].sort(), [leads]);
   const uniqueUfs = useMemo(() => [...new Set(leads.map(getLeadUf).filter(Boolean))].sort(), [leads]);
-  const uniqueCities = useMemo(() => [...new Set(leads.map(getLeadCity).filter(Boolean))].sort(), [leads]);
-  const uniqueHoods = useMemo(() => [...new Set(leads.map(getLeadHood).filter(Boolean))].sort(), [leads]);
+  const uniqueCities = useMemo(() => [...new Set(leads
+    .filter((lead) => !bUf || norm(getLeadUf(lead)) === norm(bUf))
+    .map(getLeadCity).filter(Boolean))].sort(), [leads, bUf]);
+  const uniqueHoods = useMemo(() => [...new Set(leads
+    .filter((lead) => (!bUf || norm(getLeadUf(lead)) === norm(bUf))
+      && (!bCity || norm(getLeadCity(lead)) === norm(bCity)))
+    .map(getLeadHood).filter(Boolean))].sort(), [leads, bUf, bCity]);
 
   // Active filters count
   const activeFiltersCount = useMemo(() => {
@@ -613,13 +591,12 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
     if (bHood) n += 1;
     if (bGrupo) n += 1;
     if (bRate > 0) n += 1;
-    n += bChans.length;
     n += Object.values(bSmart.channels || {}).filter((value) => value === 'with' || value === 'without').length;
     if (Number(bSmart.minRating || 0) > 0) n += 1;
     if (bSmart.city) n += 1;
     if (bSmart.category) n += 1;
     return n;
-  }, [bq, bCat, bUf, bCity, bHood, bGrupo, bRate, bChans, bSmart]);
+  }, [bq, bCat, bUf, bCity, bHood, bGrupo, bRate, bSmart]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -655,10 +632,17 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+  const currentPage = Math.min(bPage, totalPages);
+  useEffect(() => {
+    setBPage(1);
+  }, [bq, bCat, bUf, bCity, bHood, bGrupo, bRate, bSmart]);
+  useEffect(() => {
+    setBPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
   const paginatedRows = useMemo(() => {
-    const start = (bPage - 1) * PAGE_SIZE;
+    const start = (currentPage - 1) * PAGE_SIZE;
     return sortedRows.slice(start, start + PAGE_SIZE);
-  }, [sortedRows, bPage]);
+  }, [sortedRows, currentPage]);
 
   const handleSort = (key) => {
     if (bSort.key === key) {
@@ -685,14 +669,6 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
     setSel(next);
   };
 
-  const handleChannelToggle = (ch) => {
-    if (bChans.includes(ch)) {
-      setBChans(bChans.filter((c) => c !== ch));
-    } else {
-      setBChans([...bChans, ch]);
-    }
-  };
-
   const handleClearFilters = () => {
     setBq('');
     setBCat('');
@@ -701,7 +677,6 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
     setBHood('');
     setBGrupo('');
     setBRate(0);
-    setBChans([]);
     setBSmart(emptyFilters());
   };
 
@@ -1292,7 +1267,7 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
 
           <div className="field">
             <label>Estado</label>
-            <select value={bUf} onChange={(e) => setBUf(e.target.value)}>
+            <select value={bUf} onChange={(e) => { setBUf(e.target.value); setBCity(''); setBHood(''); }}>
               <option value="">Todos</option>
               {uniqueUfs.map((uf) => (
                 <option key={uf} value={uf}>{uf}</option>
@@ -1302,7 +1277,7 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
 
           <div className="field">
             <label>Cidade</label>
-            <select value={bCity} onChange={(e) => setBCity(e.target.value)}>
+            <select value={bCity} onChange={(e) => { setBCity(e.target.value); setBHood(''); }}>
               <option value="">Todas</option>
               {uniqueCities.map((city) => (
                 <option key={city} value={city}>{city}</option>
@@ -1340,29 +1315,6 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
             </select>
           </div>
 
-          <div className="field" style={{ gridColumn: 'span 2' }}>
-            <label>Canais de contato</label>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {[
-                { ch: 'tel', label: 'Tel' },
-                { ch: 'wa', label: 'WA' },
-                { ch: 'ig', label: 'IG' },
-                { ch: 'site', label: 'Site' },
-                { ch: 'mail', label: 'E-mail' },
-              ].map(({ ch, label }) => (
-                <button
-                  key={ch}
-                  type="button"
-                  className={`tgl ${bChans.includes(ch) ? 'on' : ''}`}
-                  onClick={() => handleChannelToggle(ch)}
-                  aria-pressed={bChans.includes(ch)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <label>Filtros rápidos <span className="wa-hint">clique para incluir ou excluir</span></label>
             <div className="grp-presets" data-od-id="base-presets">
@@ -1389,6 +1341,7 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
                           key={option.value}
                           type="button"
                           className={state === option.value ? 'on' : ''}
+                          aria-pressed={state === option.value}
                           onClick={() => setBSmart((current) => {
                             const channels = { ...(current.channels || {}) };
                             if (option.value === 'any') delete channels[channel.key];
@@ -1575,20 +1528,20 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setBPage(Math.max(1, bPage - 1))}
-            disabled={bPage <= 1}
+            onClick={() => setBPage(Math.max(1, currentPage - 1))}
+            disabled={currentPage <= 1}
             aria-label="Página anterior"
           >
             ←
           </button>
           <span style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
-            Página {bPage} de {totalPages} · {filteredLeads.length} leads
+            Página {currentPage} de {totalPages} · {filteredLeads.length} leads
           </span>
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setBPage(Math.min(totalPages, bPage + 1))}
-            disabled={bPage >= totalPages}
+            onClick={() => setBPage(Math.min(totalPages, currentPage + 1))}
+            disabled={currentPage >= totalPages}
             aria-label="Próxima página"
           >
             →

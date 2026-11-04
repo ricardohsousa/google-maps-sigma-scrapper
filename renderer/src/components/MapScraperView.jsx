@@ -24,6 +24,7 @@ import {
   Info
 } from 'lucide-react';
 import L from 'leaflet';
+import { canLocateAutomatically, disposeLeafletMap } from '../mapLifecycle.mjs';
 import 'leaflet/dist/leaflet.css';
 import {
   dedupeLeads,
@@ -585,7 +586,7 @@ export default function MapScraperView({
       if (initialInvalidateTimer) window.clearTimeout(initialInvalidateTimer);
       window.removeEventListener('resize', handleResize);
       try { markersLayerRef.current?.clearLayers(); } catch {}
-      try { mapInstanceRef.current?.remove(); } catch {}
+      try { disposeLeafletMap(mapInstanceRef.current); } catch {}
       mapInstanceRef.current = null;
       tileLayerRef.current = null;
       markersLayerRef.current = null;
@@ -604,9 +605,14 @@ export default function MapScraperView({
     if (!map) return undefined;
     autoLocationAttemptedRef.current = true;
     let cancelled = false;
+    let locationTimer = null;
+    const cleanup = () => {
+      cancelled = true;
+      if (locationTimer !== null) window.clearTimeout(locationTimer);
+    };
 
     const flyToLocation = (location) => {
-      window.setTimeout(() => {
+      locationTimer = window.setTimeout(() => {
         if (cancelled || mapInstanceRef.current !== map) return;
         try {
           map.invalidateSize();
@@ -618,29 +624,32 @@ export default function MapScraperView({
     const saved = readStoredUserLocation();
     if (saved) {
       flyToLocation(saved);
-      return () => { cancelled = true; };
+      return cleanup;
     }
-    if (!navigator.geolocation) return () => { cancelled = true; };
+    if (!navigator.geolocation) return cleanup;
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = Number(position.coords.latitude);
-        const lng = Number(position.coords.longitude);
-        if (cancelled || !isValidCoordinatePair(lat, lng)) return;
-        const location = {
-          lat,
-          lng,
-          label: 'Sua posição',
-          accuracy: Number.isFinite(Number(position.coords.accuracy)) ? Number(position.coords.accuracy) : null,
-        };
-        setUserLocation(location);
-        flyToLocation(location);
-      },
-      () => {},
-      { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
-    );
+    canLocateAutomatically(navigator.permissions).then((allowed) => {
+      if (!allowed || cancelled || mapInstanceRef.current !== map) return;
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = Number(position.coords.latitude);
+          const lng = Number(position.coords.longitude);
+          if (cancelled || !isValidCoordinatePair(lat, lng)) return;
+          const location = {
+            lat,
+            lng,
+            label: 'Sua posição',
+            accuracy: Number.isFinite(Number(position.coords.accuracy)) ? Number(position.coords.accuracy) : null,
+          };
+          setUserLocation(location);
+          flyToLocation(location);
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+      );
+    });
 
-    return () => { cancelled = true; };
+    return cleanup;
   }, [isMapReady]);
 
   // Atualizar camada de basemap quando baseKey mudar
@@ -884,6 +893,8 @@ export default function MapScraperView({
 
   // Usar localização atual
   const handleUseMyLocation = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
     if (!navigator.geolocation) {
       addNotification({
         type: 'warning',
@@ -903,6 +914,7 @@ export default function MapScraperView({
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (mapInstanceRef.current !== map) return;
         const lat = Number(position.coords.latitude);
         const lng = Number(position.coords.longitude);
         if (!isValidCoordinatePair(lat, lng)) {
@@ -934,11 +946,14 @@ export default function MapScraperView({
         });
       },
       (error) => {
+        if (mapInstanceRef.current !== map) return;
         addNotification({
           type: 'warning',
           category: 'system',
           title: 'Localização negada',
-          message: 'Permita o acesso à localização no seu dispositivo.',
+          message: error.code === 1
+            ? 'No ícone ao lado do endereço do site, permita a localização. Você também pode buscar uma cidade manualmente.'
+            : 'Não foi possível obter sua posição. Tente novamente ou busque uma cidade manualmente.',
         });
       },
       { timeout: 9000 }

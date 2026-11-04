@@ -1,3 +1,5 @@
+import { leadLocation } from '../../utils/lead-location.mjs';
+
 export function readLocalArray(key) {
   try {
     const data = JSON.parse(localStorage.getItem(key) || "[]");
@@ -101,9 +103,10 @@ export function normalizeLeadRecord(lead) {
   const name = normalizeOptionalText(lead.name);
   const category = normalizeLeadCategory(lead.category);
   const address = normalizeLeadAddress(lead.address);
-  const city = normalizeOptionalText(lead.city ?? lead.cidade);
-  const state = normalizeOptionalText(lead.state ?? lead.uf);
-  const neighborhood = normalizeOptionalText(lead.neighborhood ?? lead.bairro);
+  const location = leadLocation({ ...lead, address });
+  const city = normalizeOptionalText(location.city);
+  const state = normalizeOptionalText(location.state);
+  const neighborhood = normalizeOptionalText(location.neighborhood);
   const company = lead.company && typeof lead.company === 'object'
     ? {
         ...lead.company,

@@ -92,10 +92,19 @@ export function matchesLeadFilters(lead, filters = {}) {
   if (filters.category && fold(source.category) !== fold(filters.category)) return false;
   if (filters.city && fold(source.city || source.cidade) !== fold(filters.city)) return false;
   if (filters.state && fold(source.state || source.uf) !== fold(filters.state)) return false;
+  if (filters.neighborhood && fold(source.neighborhood || source.bairro || source.hood) !== fold(filters.neighborhood)) return false;
   const text = String(filters.text || '').trim();
   if (text) {
-    const haystack = fold([source.name, source.category, source.city, source.address, source.phone, source.website, source.instagram].filter(Boolean).join(' '));
-    if (!haystack.includes(fold(text))) return false;
+    const haystack = fold([
+      source.name, source.n, source.category, source.cat, source.city, source.cidade,
+      source.state, source.uf, source.neighborhood, source.bairro, source.hood,
+      source.address, source.phone, source.tel, source.whatsapp, source.website,
+      source.site, source.instagram, source.ig, source.email, source.mail,
+    ].filter(Boolean).join(' '));
+    const phoneQuery = digits(text);
+    const matchesPhone = /^[+\d\s().-]+$/.test(text) && phoneQuery.length >= 3
+      && [source.phone, source.tel, source.whatsapp].some((phone) => digits(phone).includes(phoneQuery));
+    if (!haystack.includes(fold(text)) && !matchesPhone) return false;
   }
   return true;
 }
