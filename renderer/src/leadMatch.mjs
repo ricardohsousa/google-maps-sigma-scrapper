@@ -82,6 +82,15 @@ export function leadIdentityKeys(lead) {
   return keys;
 }
 
+/**
+ * Identidades que definem pertencimento a um grupo. Telefone e site ficam de
+ * fora: redes, 0800 e agregadores (linktr.ee, facebook.com) são compartilhados
+ * por empresas diferentes, inclusive de outros estados.
+ */
+export function groupIdentityKeys(lead) {
+  return leadIdentityKeys(lead).filter((key) => !key.startsWith('phone:') && !key.startsWith('web:'));
+}
+
 /** Índice reverso: identidade → lead da base. */
 export function buildLeadIndex(leads = []) {
   const index = new Map();
@@ -137,7 +146,7 @@ export function resolveGroupMembers(group, leads = []) {
   const seen = new Set();
   (Array.isArray(leads) ? leads : []).forEach((lead, position) => {
     const key = leadKey(lead, position);
-    const matches = wanted.has(key) || leadIdentityKeys(lead).some((identity) => wanted.has(identity));
+    const matches = wanted.has(key) || groupIdentityKeys(lead).some((identity) => wanted.has(identity));
     if (!matches || seen.has(key)) return;
     seen.add(key);
     resolved.push(lead);

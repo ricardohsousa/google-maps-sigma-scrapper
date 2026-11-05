@@ -24,6 +24,21 @@ test('callback real de zoom do Leaflet pendente não acessa o pane após descart
   assert.doesNotThrow(pendingCallback);
 });
 
+test('zoom pendente da roda do mouse é cancelado ao descartar o mapa', async () => {
+  const { disposeLeafletMap } = await import('../renderer/src/mapLifecycle.mjs');
+  const source = fs.readFileSync(path.join(path.dirname(require.resolve('leaflet/package.json')), 'src/map/handler/Map.ScrollWheelZoom.js'), 'utf8');
+  assert.match(source, /this\._timer = setTimeout\(Util\.bind\(this\._performZoom, this\)/);
+
+  let performed = false;
+  const map = {
+    scrollWheelZoom: { _timer: setTimeout(() => { performed = true; }, 0) },
+    remove() {},
+  };
+  disposeLeafletMap(map);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(performed, false);
+});
+
 test('localização automática só usa permissão já concedida', async () => {
   const { canLocateAutomatically } = await import('../renderer/src/mapLifecycle.mjs');
   for (const state of ['granted', 'prompt', 'denied']) {

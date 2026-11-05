@@ -74,6 +74,42 @@ test('grupo não empresta membros para outra empresa', async () => {
   assert.equal(resolveGroupMembers(group, otherBase).length, 0);
 });
 
+test('site ou telefone compartilhado não traz lead de outro estado para o grupo', async () => {
+  const { createGroup, filterLeads, membersFromLeads } = await groupsModule;
+  const { resolveGroupMembers } = await matchModule;
+  const leads = [
+    { id: 'rj1', name: 'Clínica A', state: 'RJ', city: 'Rio', address: 'Rua 1, 10 - Centro, Rio - RJ', website: 'https://linktr.ee/a' },
+    { id: 'sp1', name: 'Clínica B', state: 'SP', city: 'Santos', address: 'Rua 2, 20 - Centro, Santos - SP', website: 'https://linktr.ee/b' },
+    { id: 'rj2', name: 'Rede X Rio', state: 'RJ', city: 'Rio', address: 'Rua 3, 30 - Centro, Rio - RJ', phone: '0800 123 4567' },
+    { id: 'pr1', name: 'Rede X Curitiba', state: 'PR', city: 'Curitiba', address: 'Rua 4, 40 - Centro, Curitiba - PR', phone: '0800 123 4567' },
+  ];
+  const group = createGroup({ name: 'RJ', members: membersFromLeads(filterLeads(leads, { state: 'RJ' }), leads) });
+  assert.deepEqual(resolveGroupMembers(group, leads).map((l) => l.id), ['rj1', 'rj2']);
+});
+
+test('grupo já salvo com chaves de site e telefone deixa de puxar outras empresas', async () => {
+  const { resolveGroupMembers } = await matchModule;
+  const leads = [
+    { id: 'a', name: 'Clínica A', website: 'https://linktr.ee/a', phone: '0800 123 4567' },
+    { id: 'b', name: 'Clínica B', website: 'https://linktr.ee/b', phone: '0800 123 4567' },
+  ];
+  const group = { members: ['a', 'web:linktr.ee', 'phone:08001234567'] };
+  assert.deepEqual(resolveGroupMembers(group, leads).map((l) => l.id), ['a']);
+});
+
+test('filtros da base levados ao grupo mantêm o recorte por estado', async () => {
+  const { filterLeads, groupFiltersFromBase, hasActiveFilters } = await groupsModule;
+  const leads = [
+    { id: 'rj', state: 'RJ', neighborhood: 'Centro' },
+    { id: 'sp', state: 'SP', neighborhood: 'Centro' },
+  ];
+  const filters = groupFiltersFromBase({ state: 'RJ' });
+  assert.equal(hasActiveFilters(filters), true);
+  assert.deepEqual(filterLeads(leads, filters).map((l) => l.id), ['rj']);
+  assert.equal(hasActiveFilters(groupFiltersFromBase({ neighborhood: 'Centro' })), true);
+  assert.equal(hasActiveFilters(groupFiltersFromBase({})), false);
+});
+
 test('payload do serviço carrega leadIds e mantém os membros', async () => {
   const { createGroup, membersFromLeads, toServiceGroups } = await groupsModule;
   const group = createGroup({ name: 'Grupo A', members: membersFromLeads([LEADS[1]], LEADS) });

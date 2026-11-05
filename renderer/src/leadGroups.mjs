@@ -2,7 +2,7 @@
 // formato do serviço de scoring. Compartilhado entre Base de Leads, Lead
 // Scoring e o assistente de campanha para que os três vejam os mesmos grupos.
 
-import { leadIdentityKeys, leadKey } from './leadMatch.mjs';
+import { groupIdentityKeys, leadKey } from './leadMatch.mjs';
 
 export const CHANNELS = [
   { key: 'whatsapp', label: 'WhatsApp', hint: 'telefone utilizável' },
@@ -35,6 +35,16 @@ export function emptyFilters() {
   return { channels: {}, minRating: 0, category: '', city: '', state: '', text: '' };
 }
 
+/** Leva o recorte atual da Base para a criação de grupo por filtro. */
+export function groupFiltersFromBase(filters = {}) {
+  return {
+    ...emptyFilters(),
+    ...filters,
+    channels: { ...(filters.channels || {}) },
+    minRating: Number(filters.minRating || 0),
+  };
+}
+
 export function hasActiveFilters(filters) {
   const f = filters || {};
   const channels = Object.values(f.channels || {}).filter((value) => value === 'with' || value === 'without');
@@ -43,6 +53,7 @@ export function hasActiveFilters(filters) {
     || Boolean(f.category)
     || Boolean(f.city)
     || Boolean(f.state)
+    || Boolean(f.neighborhood)
     || Boolean(String(f.text || '').trim());
 }
 
@@ -130,12 +141,12 @@ export function applyPreset(filters, preset) {
 }
 
 /**
- * Chaves de pertencimento: o id visível e as identidades estáveis (telefone,
- * nome+endereço…). Guardar as duas formas faz o grupo sobreviver a uma
+ * Chaves de pertencimento: o id visível e as identidades estáveis (nome+endereço,
+ * nome+cidade). Guardar as duas formas faz o grupo sobreviver a uma
  * reimportação, em que os ids do renderer mudam.
  */
 export function membershipKeys(lead, index = 0) {
-  return [...new Set([leadKey(lead, index), ...leadIdentityKeys(lead)])];
+  return [...new Set([leadKey(lead, index), ...groupIdentityKeys(lead)])];
 }
 
 export function membersFromLeads(leads = [], allLeads = null) {

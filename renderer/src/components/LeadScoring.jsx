@@ -28,6 +28,9 @@ import {
 } from 'lucide-react';
 import { instagramProfileUrl, normalizeInstagram } from '../leadLinks.mjs';
 import { dedupeLeads, normalizeLeadCollection, readLocalArray } from '../leadData';
+import { requestGroupsManager } from '../groupsManagerRequest.mjs';
+import { findKanbanCard, parseDealValue, stageAction } from '../kanbanStage.mjs';
+import { useNotifications } from './NotificationCenter';
 import {
   DEFAULT_SCORE_THRESHOLDS,
   buildScoringIndex,
@@ -395,6 +398,10 @@ function analysisFromService(savedLead, preset = 'sites') {
 }
 
 export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequest = 0 }) {
+  const { addNotification } = useNotifications();
+  const [kanbanBoard, setKanbanBoard] = useState(null);
+  const [kanbanBusyId, setKanbanBusyId] = useState('');
+  const [wonPrompt, setWonPrompt] = useState(null);
   const [leads, setLeads] = useState(() => normalizeLeadCollection(readLocalArray('sigma_leads')));
   const [localGroups, setLocalGroups] = useState(() => readLocalArray('sigma_groups'));
   const [serviceGroups, setServiceGroups] = useState([]);
@@ -521,6 +528,115 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
       window.removeEventListener('sigma:groups-updated', refreshData);
     };
   }, []);
+
+  const loadKanbanBoard = useCallback(async () => {
+    const response = await window.kanbanAPI?.getBoard?.();
+    if (response?.success === false) throw new Error(response.error || 'Não foi possível carregar o Kanban.');
+    const board = response?.board || null;
+    setKanbanBoard(board);
+    return board;
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => { loadKanbanBoard().catch(() => {}); };
+    refresh();
+    window.addEventListener('sigma:deal-updated', refresh);
+    return () => window.removeEventListener('sigma:deal-updated', refresh);
+  }, [loadKanbanBoard]);
+
+  const kanbanColumns = kanbanBoard?.board?.columns || [];
+
+  const finishStageChange = (lead, response, fallbackStage) => {
+    if (response?.success === false) throw new Error(response.error || 'Não foi possível mudar a etapa.');
+    const board = response.board;
+    setKanbanBoard(board);
+    window.dispatchEvent(new CustomEvent('sigma:deal-updated', { detail: { stats: board?.stats } }));
+    const moved = findKanbanCard(board?.cards, lead);
+    const stage = board?.board?.columns?.find((column) => column.id === moved?.columnId)?.name || fallbackStage;
+    addLog?.(`[KANBAN] ${lead.name || 'Lead'} movido para ${stage} pelo Lead Scoring.`);
+    addNotification({
+      type: 'success',
+      category: 'system',
+      title: 'Etapa atualizada',
+      message: `${lead.name || 'Lead'} agora está em ${stage}. Automações pausadas para este lead.`,
+    });
+  };
+
+  const reportStageError = (error) => {
+    addNotification({
+      type: 'error',
+      category: 'system',
+      title: 'Etapa não alterada',
+      message: error?.message || 'Não foi possível mudar a etapa.',
+    });
+    loadKanbanBoard().catch(() => {});
+  };
+
+  const changeLeadStage = async (lead, toColumnId) => {
+    const column = kanbanColumns.find((item) => item.id === toColumnId);
+    if (!column || !window.kanbanAPI) return;
+    setKanbanBusyId(lead.id);
+    try {
+      let card = findKanbanCard(kanbanBoard?.cards, lead);
+      if (!card) {
+        // A sincronização é autoritativa: enviar só este lead apagaria os outros cards.
+        const synced = await window.kanbanAPI.syncMapsLeads(leads);
+        if (synced?.success === false) throw new Error(synced.error || 'Não foi possível sincronizar o Kanban.');
+        const board = await loadKanbanBoard();
+        card = findKanbanCard(board?.cards, lead);
+        if (!card) throw new Error('Este lead não foi encontrado no Kanban.');
+      }
+      const action = stageAction(card, column);
+      if (action === 'none') return;
+      if (action === 'won') {
+        setWonPrompt({ lead, card, column, value: card.dealValue ? String(card.dealValue) : '' });
+        return;
+      }
+      const response = action === 'lost'
+        ? await window.kanbanAPI.recordDeal({
+            entityKey: card.entityKey,
+            outcome: 'lost',
+            value: card.dealValue || 0,
+            note: card.dealNote || '',
+            reminderAt: card.reminderAt,
+            reminderNote: card.reminderNote,
+          })
+        : await window.kanbanAPI.moveCard({
+            entityKey: card.entityKey,
+            toColumnId,
+            expectedRevision: card.revision,
+            manual: true,
+          });
+      finishStageChange(lead, response, column.name);
+    } catch (error) {
+      reportStageError(error);
+    } finally {
+      setKanbanBusyId('');
+    }
+  };
+
+  const confirmWonStage = async () => {
+    const value = parseDealValue(wonPrompt?.value);
+    if (!value) return;
+    const { lead, card, column } = wonPrompt;
+    setWonPrompt(null);
+    setKanbanBusyId(lead.id);
+    try {
+      const response = await window.kanbanAPI.recordDeal({
+        entityKey: card.entityKey,
+        outcome: 'won',
+        value,
+        note: card.dealNote || '',
+        reminderAt: card.reminderAt,
+        reminderNote: card.reminderNote,
+      });
+      finishStageChange(lead, response, column.name);
+    } catch (error) {
+      reportStageError(error);
+    } finally {
+      setKanbanBusyId('');
+    }
+  };
 
   // Notificar contagem de leads analisados
   useEffect(() => {
@@ -916,10 +1032,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => {
-                    window.location.hash = '#base';
-                    window.dispatchEvent(new CustomEvent('sigma:open-groups'));
-                  }}
+                  onClick={requestGroupsManager}
                 >
                   Criar grupo na Base de Leads
                 </button>
@@ -954,10 +1067,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                    className="icon-btn sc-group-add"
                    title="Criar ou gerenciar grupos"
                    aria-label="Criar ou gerenciar grupos"
-                   onClick={() => {
-                     window.location.hash = '#base';
-                     window.dispatchEvent(new CustomEvent('sigma:open-groups'));
-                   }}
+                   onClick={requestGroupsManager}
                  >
                    <Plus size={16} />
                  </button>
@@ -1151,6 +1261,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                     <th>Score</th>
                     <th>Contato</th>
                     <th>Situação</th>
+                    <th>Etapa</th>
                     <th>Oportunidades</th>
                     <th>Atualizado</th>
                     <th style={{ width: 90 }}></th>
@@ -1159,7 +1270,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                 <tbody id="scResBody">
                   {groupLeads.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <div className="empty">
                           <div className="e-icon">○</div>
                           <b style={{ color: 'var(--fg)' }}>Nenhum lead deste grupo está na base atual</b>
@@ -1174,7 +1285,7 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                   ) : null}
                   {groupLeads.length > 0 && visibleLeads.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <div className="empty">
                           <b style={{ color: 'var(--fg)' }}>Nenhum lead neste filtro</b>
                           <button type="button" className="btn btn-sm" onClick={() => { setSiteFilter('all'); setStatusFilter('all'); }}>Mostrar todos</button>
@@ -1237,6 +1348,21 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
                         </td>
                         <td>
                           <span className={`st-pill ${sit[1]}`}>{sit[0]}</span>
+                        </td>
+                        <td>
+                          <label className="sc-sort">
+                            <select
+                              aria-label={`Etapa do Kanban de ${lead.name || 'lead'}`}
+                              value={findKanbanCard(kanbanBoard?.cards, lead)?.columnId || ''}
+                              disabled={!kanbanColumns.length || kanbanBusyId === lead.id}
+                              onChange={(event) => changeLeadStage(lead, event.target.value)}
+                            >
+                              <option value="" disabled>Sem etapa</option>
+                              {kanbanColumns.map((column) => (
+                                <option key={column.id} value={column.id}>{column.name}</option>
+                              ))}
+                            </select>
+                          </label>
                         </td>
                         <td style={{ fontSize: 12.5, maxWidth: 220 }} title={an ? an.opp.join('; ') : ''}>
                           {an && an.opp.length > 0 ? an.opp.slice(0, 2).join(' · ') : '—'}
@@ -1488,6 +1614,40 @@ export default function LeadScoring({ onUpdateScoringCount, addLog, settingsRequ
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {wonPrompt && (
+        <div className="overlay on" onClick={() => setWonPrompt(null)}>
+          <form
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scWonTitle"
+            style={{ width: 'min(420px, 94vw)' }}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => { event.preventDefault(); confirmWonStage(); }}
+          >
+            <div className="modal-head">
+              <h2 id="scWonTitle">Registrar venda</h2>
+            </div>
+            <div className="modal-body" style={{ gridTemplateColumns: '1fr' }}>
+              <label className="field">
+                <span>Valor fechado com {wonPrompt.lead.name || 'o lead'}</span>
+                <input
+                  autoFocus
+                  inputMode="decimal"
+                  placeholder="Ex.: 1.500,00"
+                  value={wonPrompt.value}
+                  onChange={(event) => setWonPrompt((current) => ({ ...current, value: event.target.value }))}
+                />
+              </label>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn btn-ghost" onClick={() => setWonPrompt(null)}>Cancelar</button>
+              <button type="submit" className="btn btn-primary" disabled={!parseDealValue(wonPrompt.value)}>Mover para {wonPrompt.column.name}</button>
+            </div>
+          </form>
         </div>
       )}
 

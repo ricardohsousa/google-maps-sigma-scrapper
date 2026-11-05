@@ -42,6 +42,7 @@ import {
 import TriggersManagerModal from './TriggersManagerModal';
 import ChatVoicePlayer from './ChatVoicePlayer';
 import { resolveGroupMembers } from '../leadMatch.mjs';
+import { requestGroupsManager } from '../groupsManagerRequest.mjs';
 
 /** Isola crash de um player de áudio para não derrubar o chat inteiro */
 class VoicePlayerBoundary extends React.Component {
@@ -3324,10 +3325,7 @@ function WhatsAppPanel({ waStatus, setWaStatus, addLog }) {
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                onClick={() => {
-                  window.location.hash = '#base';
-                  window.dispatchEvent(new CustomEvent('sigma:open-groups'));
-                }}
+                onClick={requestGroupsManager}
               >
                 Criar grupo agora
               </button>

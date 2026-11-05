@@ -4,6 +4,9 @@ export function disposeLeafletMap(map) {
   // sem identificador cancelável. remove() interrompe pan/flyTo, mas não
   // limpa esta flag; o callback tenta acessar o pane já destruído.
   map._animatingZoom = false;
+  // O debounce da roda do mouse também sobrevive a remove(): disable() só
+  // retira o listener, e _performZoom acessaria o pane já destruído.
+  clearTimeout(map.scrollWheelZoom?._timer);
   map.remove();
 }
 

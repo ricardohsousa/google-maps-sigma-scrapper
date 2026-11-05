@@ -23,6 +23,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { dedupeLeads, normalizeLeadCategory, normalizeLeadCollection, readLocalArray } from '../leadData';
+import { consumeGroupsManagerRequest } from '../groupsManagerRequest.mjs';
 import { DEFAULT_SCORE_THRESHOLDS, buildScoringIndex, findScoringLead, resolveGroupMembers, scoreBand } from '../leadMatch.mjs';
 import { normalizeLeadLinks } from '../leadLinks.mjs';
 import {
@@ -33,6 +34,7 @@ import {
   createGroup,
   emptyFilters,
   filterLeads,
+  groupFiltersFromBase,
   hasActiveFilters,
   leadChannels,
   matchesLeadFilters,
@@ -155,6 +157,8 @@ function describeFilters(filters) {
   if (filters?.category) parts.push(filters.category);
   if (filters?.city) parts.push(filters.city);
   if (filters?.state) parts.push(filters.state);
+  if (filters?.neighborhood) parts.push(filters.neighborhood);
+  if (String(filters?.text || '').trim()) parts.push(`busca: ${String(filters.text).trim()}`);
   return parts.join(' · ').slice(0, 240);
 }
 
@@ -352,9 +356,7 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
 
   // Quem manda "criar grupo" de outra tela cai direto no modal certo.
   useEffect(() => {
-    const openGroups = () => setIsGroupsOpen(true);
-    window.addEventListener('sigma:open-groups', openGroups);
-    return () => window.removeEventListener('sigma:open-groups', openGroups);
+    if (consumeGroupsManagerRequest()) setIsGroupsOpen(true);
   }, []);
 
   useEffect(() => {
@@ -635,6 +637,9 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
   const currentPage = Math.min(bPage, totalPages);
   useEffect(() => {
     setBPage(1);
+    // A seleção vale para o recorte em que foi feita: mantê-la levaria leads
+    // fora da tela para exportações e grupos do novo filtro.
+    setSel((current) => (current.size ? new Set() : current));
   }, [bq, bCat, bUf, bCity, bHood, bGrupo, bRate, bSmart]);
   useEffect(() => {
     setBPage((page) => Math.min(page, totalPages));
@@ -702,7 +707,10 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
   // sem seleção abre direto em "Filtrar a base" para não parecer que não há nada.
   const openCreateGroup = (mode) => {
     setNewGroupName('');
-    setGroupFilters(emptyFilters());
+    setGroupFilters(groupFiltersFromBase({
+      ...bSmart, category: bCat, city: bCity, state: bUf, neighborhood: bHood,
+      minRating: bRate, text: bq,
+    }));
     setGroupMode(mode || (sel.size > 0 ? 'selection' : 'filter'));
     setIsCreateGroupOpen(true);
   };
@@ -1848,11 +1856,39 @@ export default function LeadsManager({ onUpdateLeadsCount, addLog }) {
                       />
                     </label>
                     <label className="field">
+                      <span>Estado</span>
+                      <select
+                        value={groupFilters.state || ''}
+                        onChange={(e) => setGroupFilters((current) => ({ ...current, state: e.target.value }))}
+                      >
+                        <option value="">Qualquer</option>
+                        {uniqueUfs.map((uf) => (
+                          <option key={uf} value={uf}>{uf}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
                       <span>Cidade</span>
                       <input
                         value={groupFilters.city || ''}
                         placeholder="Qualquer"
                         onChange={(e) => setGroupFilters((current) => ({ ...current, city: e.target.value }))}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Bairro</span>
+                      <input
+                        value={groupFilters.neighborhood || ''}
+                        placeholder="Qualquer"
+                        onChange={(e) => setGroupFilters((current) => ({ ...current, neighborhood: e.target.value }))}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Busca</span>
+                      <input
+                        value={groupFilters.text || ''}
+                        placeholder="Qualquer"
+                        onChange={(e) => setGroupFilters((current) => ({ ...current, text: e.target.value }))}
                       />
                     </label>
                     <label className="field">
